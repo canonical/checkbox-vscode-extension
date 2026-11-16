@@ -11,6 +11,8 @@ provides go to definition, hover and diagnostics for unit references.
   files, diagnostics, definition and hover.
 - `src/server/namespace.ts` finds where each provider declares its namespace,
   which go to definition on `imports` namespaces uses.
+- `WorkspaceIndex.manifestEntries` finds `manifest entry` units by resource
+  key, for go to definition on `manifest.<key>` in resource expressions.
 - `src/server/hover.ts` builds the hover text (id and summary of each target).
 - `src/server/parsers/{pxu,yaml}.ts` parse unit records and keep the document
   offset of every field.

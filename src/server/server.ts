@@ -193,9 +193,11 @@ function referenceAt(uri: string, position: Position) {
   }
   const offset = doc.offsetAt(position);
   const unit = entry.units.find((u) => u.start <= offset && offset <= u.end);
-  const ref = unit?.references.find((r) => r.start <= offset && offset <= r.end);
-  const namespace = unit?.namespaceRefs.find((n) => n.start <= offset && offset <= n.end);
-  return ref || namespace ? { doc, ref, namespace } : undefined;
+  const at = (r: { start: number; end: number }) => r.start <= offset && offset <= r.end;
+  const ref = unit?.references.find(at);
+  const namespace = unit?.namespaceRefs.find(at);
+  const manifest = unit?.manifestRefs.find(at);
+  return ref || namespace || manifest ? { doc, ref, namespace, manifest } : undefined;
 }
 
 function toLocations(targets: { file: string; start: number; end: number }[]): Location[] {
@@ -234,6 +236,9 @@ connection.onDefinition(({ textDocument, position }) => {
   const found = referenceAt(textDocument.uri, position);
   if (found?.namespace) {
     return toLocations(index.namespaceDeclarations(found.namespace.namespace));
+  }
+  if (found?.manifest) {
+    return toLocations(index.manifestEntries(found.manifest.key));
   }
   const ref = found?.ref;
   if (!ref) {

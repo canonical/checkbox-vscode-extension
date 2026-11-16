@@ -60,4 +60,6 @@ test("requires resource names mirror ResourceNodeVisitor", () => {
   assert.deepEqual(names("package.name == 'a.b' and int(cpuinfo.count) > 1"), ["package"]);
   assert.deepEqual(names("a.x == 1 or (b.y in ['c.d'] and not c.z)"), ["a", "b", "c"]);
   assert.deepEqual(names("manifest.has_x == 'True'"), ["manifest"]);
+  const attrs = (text: string) => resourceNames({ text, offset: 0 }).map((n) => n.attr);
+  assert.deepEqual(attrs("manifest.has_x == 'True' and b"), [{ text: "has_x", offset: 9 }, undefined]);
 });

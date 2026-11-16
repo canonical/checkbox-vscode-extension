@@ -9,6 +9,13 @@ A VS Code extension with a language server for Checkbox unit files: PXU
   `exclude`, `mandatory_include`, `bootstrap_include`, `setup_include`,
   `nested_part` and `category-overrides`. For a regular expression, go to
   definition lists every unit that the pattern matches.
+- **Go to definition** on a manifest attribute in `requires` or
+  `template-filter`, such as `has_bt_adapter` in
+  `manifest.has_bt_adapter == 'True'`. It lists the `manifest entry` units
+  whose `resource-key` (by default, the partial id) matches, in any provider.
+  This works when `manifest` resolves to `com.canonical.plainbox::manifest`,
+  usually through `imports`. Attributes with template placeholders, such as
+  `need_{type}_test`, list every entry they can match.
 - **Go to definition** on the namespace in an `imports` line, such as
   `com.canonical.plainbox` in `from com.canonical.plainbox import manifest`.
   It lists the `namespace` or `name` argument in the `manage.py` of every

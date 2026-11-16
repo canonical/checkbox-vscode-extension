@@ -82,6 +82,18 @@ export class WorkspaceIndex {
     return false;
   }
 
+  /** Manifest entry units exposing the given manifest resource attribute. */
+  manifestEntries(key: string): { file: string; start: number; end: number }[] {
+    const regex = templateIdRegex(key);
+    const matches = (resourceKey?: string) =>
+      resourceKey !== undefined && (regex ? regex.test(resourceKey) : resourceKey === key);
+    return [...this.files.values()].flatMap((entry) =>
+      entry.units
+        .filter((u) => u.kind === "manifest entry" && matches(u.resourceKey))
+        .map((u) => ({ file: entry.file, start: u.idStart, end: u.idEnd })),
+    );
+  }
+
   /** Where each provider using a namespace declares it. */
   namespaceDeclarations(namespace: string): NamespaceDeclaration[] {
     return [...this.providers.values()]

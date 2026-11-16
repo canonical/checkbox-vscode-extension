@@ -210,6 +210,11 @@ function skipString(s: string, i: number): number {
   return s.length;
 }
 
+/** A resource name and the attribute accessed on it (NAME.attr). */
+export interface ResourceName extends ValueLine {
+  attr?: ValueLine;
+}
+
 /**
  * Names referenced by a resource expression (one line of "requires" or
  * "template-filter"), mirroring plainbox.impl.resource.ResourceNodeVisitor:
@@ -217,9 +222,9 @@ function skipString(s: string, i: number): number {
  * arguments (visit_Call does not recurse). Names inside "{...}" template
  * placeholders are ignored.
  */
-export function resourceNames(line: ValueLine): ValueLine[] {
+export function resourceNames(line: ValueLine): ResourceName[] {
   const s = line.text;
-  const names: ValueLine[] = [];
+  const names: ResourceName[] = [];
   let prev = "";
   let braces = 0;
   let i = 0;
@@ -273,7 +278,13 @@ export function resourceNames(line: ValueLine): ValueLine[] {
         continue;
       }
       if (!PY_KEYWORDS.has(word) && prev !== "." && braces === 0) {
-        names.push({ text: word, offset: line.offset + i });
+        const name: ResourceName = { text: word, offset: line.offset + i };
+        // Attributes may contain template placeholders: need_{type}_test
+        const attr = /^\s*\.\s*([A-Za-z_{][\w{}]*)/.exec(s.slice(j));
+        if (attr) {
+          name.attr = { text: attr[1], offset: line.offset + j + attr[0].length - attr[1].length };
+        }
+        names.push(name);
       }
       prev = "name";
       i = j;

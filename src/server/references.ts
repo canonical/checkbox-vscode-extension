@@ -6,7 +6,7 @@
  */
 
 import { Field, ListItem, RawUnit, stringValue, trimmedLine, ValueLine } from "./model";
-import { qualify } from "./namespace";
+import { PLAINBOX_NAMESPACE, qualify } from "./namespace";
 import {
   classifyPattern,
   ImportStmt,
@@ -37,6 +37,13 @@ export interface Reference {
   start: number;
   end: number;
   constraint: Constraint;
+}
+
+/** An attribute of the manifest resource, e.g. has_bt_adapter. */
+export interface ManifestRef {
+  key: string;
+  start: number;
+  end: number;
 }
 
 /** A namespace written in an imports statement. */
@@ -76,10 +83,16 @@ export interface UnitInfo {
   generated: GeneratedId[];
   references: Reference[];
   namespaceRefs: NamespaceRef[];
+  manifestRefs: ManifestRef[];
+  /** Attribute name in the manifest resource (manifest entries only). */
+  resourceKey?: string;
   problems: Problem[];
   start: number;
   end: number;
 }
+
+/** The resource job that exposes manifest entries by their resource key. */
+const MANIFEST_RESOURCE = `${PLAINBOX_NAMESPACE}::manifest`;
 
 const SUSPEND_FLAGS: [string, string][] = [
   ["also-after-suspend", "after-suspend"],
@@ -265,10 +278,15 @@ class Extractor {
       generated: [],
       references: [],
       namespaceRefs: [],
+      manifestRefs: [],
       problems: [],
       start: unit.start,
       end: unit.end,
     };
+    if (this.info.kind === "manifest entry") {
+      // Mirrors ManifestEntryUnit.resource_key
+      this.info.resourceKey = stringValue(unit.fields.get("resource-key")) ?? this.info.partialId;
+    }
     const flags = flagWords(unit.fields.get("flags")).map((w) => w.text);
     this.info.plugin =
       stringValue(unit.fields.get("plugin")) ??
@@ -332,6 +350,13 @@ class Extractor {
           ? `${imported.namespace}::${imported.partialId}`
           : qualify(alias.text, namespace);
         this.ref(name, alias, target, "resource");
+        if (target === MANIFEST_RESOURCE && alias.attr) {
+          this.info.manifestRefs.push({
+            key: alias.attr.text,
+            start: alias.attr.offset,
+            end: lineEnd(alias.attr),
+          });
+        }
       }
     }
   }

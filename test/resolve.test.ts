@@ -143,3 +143,25 @@ test("imports namespaces resolve to provider declarations", () => {
   });
   assert.deepEqual(declarations.sort(), ['/p/manage.py:name="ns', '/q/manage.py:pace="ns']);
 });
+
+test("manifest attributes resolve to manifest entries by resource key", () => {
+  const units = `
+id: j
+plugin: shell
+imports: from com.canonical.plainbox import manifest
+requires: manifest.has_x == 'True' and manifest.custom == 'True' and manifest.has_{name} == 'True'
+
+unit: manifest entry
+id: has_x
+
+unit: manifest entry
+id: other
+resource-key: custom
+`;
+  const { index, entry } = makeIndex(units);
+  const targets = entry.units[0].manifestRefs.map((ref) => {
+    const [target] = index.manifestEntries(ref.key);
+    return `${units.slice(ref.start, ref.end)} -> ${units.slice(target.start, target.end)}`;
+  });
+  assert.deepEqual(targets, ["has_x -> has_x", "custom -> other", "has_{name} -> has_x"]);
+});
