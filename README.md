@@ -9,12 +9,13 @@ It provides autocomplete and "go to definition" functionalities like you would e
 ## Installation
 
 1. Clone the repo
-2. ```bash
-  npm ci
-  npm run compile
-  npx vsce package --skip-license --allow-missing-repository
-  code --install-extension vscode-checkbox-0.1.0.vsix
-  ```
+2. Build the extension 
+    ```bash
+    npm ci
+    npm run compile
+    npx vsce package --skip-license --allow-missing-repository
+    code --install-extension vscode-checkbox-0.1.0.vsix
+    ```
 3. Restart the vscode extension host
 
 # The Rest of the .md is for claude to read. humans you can skip the rest.
