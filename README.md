@@ -1,3 +1,21 @@
+# VS Code autocomplete for checkbox unit files
+
+This is a vibe coded lsp and vscode extension specifically made to make working with checkbox unit files easier. 
+It provides autocomplete and "go to definition" functionalities like you would expect from regular language servers.
+
+## Installation
+
+1. Clone the repo
+2. ```bash
+  npm ci
+  npm run compile
+  npx vsce package --skip-license --allow-missing-repository
+  code --install-extension vscode-checkbox-0.1.0.vsix
+  ```
+3. Restart the vscode extension host
+
+# The Rest of the .md is for claude to read. humans you can skip the rest.
+
 # Checkbox Units for VS Code
 
 A VS Code extension with a language server for Checkbox unit files: PXU
