@@ -1,0 +1,69 @@
+{
+  "name": "vscode-checkbox",
+  "displayName": "Checkbox Units",
+  "description": "Go to definition and reference checking for Checkbox unit files (PXU and YAML)",
+  "version": "0.1.0",
+  "publisher": "canonical",
+  "license": "GPL-3.0-only",
+  "private": true,
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "main": "./out/src/client/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/units/**/*.pxu",
+    "workspaceContains:**/units/**/*.yaml",
+    "onLanguage:checkbox-pxu"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "checkbox-pxu",
+        "aliases": [
+          "Checkbox PXU",
+          "pxu"
+        ],
+        "extensions": [
+          ".pxu"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "configuration": {
+      "title": "Checkbox Units",
+      "properties": {
+        "checkbox.additionalProviderPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra directories (absolute or workspace-relative) scanned for providers (manage.py), e.g. a checkbox-ng checkout providing the com.canonical.plainbox namespace."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "lint": "tsc -p . --noEmit",
+    "test": "tsc -p . && node --test \"out/test/**/*.test.js\"",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "~1.91.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.8.0"
+  }
+}

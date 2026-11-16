@@ -1,0 +1,193 @@
+/**
+ * Workspace-wide index of units, keyed by qualified id.
+ */
+
+import * as path from "path";
+import { ParseError } from "./model";
+import { namespaceFromManagePy, Provider, providerFor, unitFormat } from "./namespace";
+import { parsePxu } from "./parsers/pxu";
+import { parseYaml } from "./parsers/yaml";
+import { extractUnit, UnitInfo } from "./references";
+
+export interface FileEntry {
+  file: string;
+  text: string;
+  namespace?: string;
+  units: UnitInfo[];
+  parseErrors: ParseError[];
+}
+
+/** A place where a unit id is defined. */
+export interface Definition {
+  file: string;
+  start: number;
+  end: number;
+  unit: UnitInfo;
+  /** Plugin of the defined job (differs from unit.plugin for siblings). */
+  plugin?: string;
+}
+
+export interface TemplateDef {
+  file: string;
+  unit: UnitInfo;
+  /** Matches ids of instantiated jobs. */
+  idRegex?: RegExp;
+  /** Template ids, including generated after-suspend variants. */
+  templateIds: string[];
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Regex matching ids instantiated from a template id with placeholders. */
+export function templateIdRegex(id: string): RegExp | undefined {
+  const placeholder = /\{\{[^}]*\}\}|\{[^}]*\}/g;
+  if (!placeholder.test(id)) {
+    return undefined;
+  }
+  const parts = id.split(placeholder).map(escapeRegex);
+  return new RegExp(`^${parts.join(".+")}$`);
+}
+
+export class WorkspaceIndex {
+  private providers = new Map<string, Provider>();
+  readonly files = new Map<string, FileEntry>();
+  /** keepTemplated: see extractUnit. */
+  constructor(private readonly keepTemplated = false) {}
+
+  private cache?: {
+    ids: Map<string, Definition[]>;
+    templates: TemplateDef[];
+    namespaces: Set<string>;
+  };
+
+  setProvider(managePy: string, text: string): boolean {
+    const namespace = namespaceFromManagePy(managePy, text);
+    const root = path.dirname(managePy);
+    if (!namespace) {
+      return this.removeProvider(managePy);
+    }
+    const previous = this.providers.get(root);
+    this.providers.set(root, { root, namespace });
+    if (previous?.namespace !== namespace) {
+      this.reassignNamespaces();
+      return true;
+    }
+    return false;
+  }
+
+  removeProvider(managePy: string): boolean {
+    const root = path.dirname(managePy);
+    if (this.providers.delete(root)) {
+      this.reassignNamespaces();
+      return true;
+    }
+    return false;
+  }
+
+  private reassignNamespaces() {
+    for (const entry of this.files.values()) {
+      const namespace = this.namespaceFor(entry.file);
+      if (namespace !== entry.namespace) {
+        this.updateFile(entry.file, entry.text);
+      }
+    }
+    this.cache = undefined;
+  }
+
+  namespaceFor(file: string): string | undefined {
+    return providerFor(file, [...this.providers.values()])?.namespace;
+  }
+
+  /** Whether the file is a unit source of a known provider. */
+  isUnitFile(file: string): boolean {
+    return unitFormat(file) !== undefined && this.namespaceFor(file) !== undefined;
+  }
+
+  updateFile(file: string, text: string): FileEntry {
+    const namespace = this.namespaceFor(file);
+    const format = unitFormat(file);
+    const entry: FileEntry = { file, text, namespace, units: [], parseErrors: [] };
+    if (namespace && format) {
+      const parsed = format === "pxu" ? parsePxu(text) : parseYaml(text);
+      entry.parseErrors = parsed.errors;
+      entry.units = parsed.units.map((unit) => extractUnit(unit, namespace, this.keepTemplated));
+    }
+    this.files.set(file, entry);
+    this.cache = undefined;
+    return entry;
+  }
+
+  removeFile(file: string) {
+    if (this.files.delete(file)) {
+      this.cache = undefined;
+    }
+  }
+
+  private build() {
+    if (this.cache) {
+      return this.cache;
+    }
+    const ids = new Map<string, Definition[]>();
+    const templates: TemplateDef[] = [];
+    const namespaces = new Set([...this.providers.values()].map((p) => p.namespace));
+    const add = (id: string, definition: Definition) => {
+      const list = ids.get(id);
+      if (list) {
+        list.push(definition);
+      } else {
+        ids.set(id, [definition]);
+      }
+    };
+    for (const entry of this.files.values()) {
+      for (const unit of entry.units) {
+        if (unit.kind === "template") {
+          const suspendPrefixes = unit.generated
+            .map((g) => g.id.slice(g.id.indexOf("::") + 2))
+            .filter((id) => id === `after-suspend-${unit.partialId}` || id === `after-suspend-manual-${unit.partialId}`)
+            .map((id) => id.slice(0, id.length - (unit.partialId?.length ?? 0)));
+          const templateIds = unit.templateId ? [unit.templateId] : [];
+          for (const prefix of suspendPrefixes) {
+            if (unit.templateId) {
+              const raw = unit.templateId.slice(unit.templateId.indexOf("::") + 2);
+              templateIds.push(`${unit.templateId.slice(0, unit.templateId.indexOf("::") + 2)}${prefix}${raw}`);
+            }
+          }
+          templates.push({ file: entry.file, unit, idRegex: unit.id ? templateIdRegex(unit.id) : undefined, templateIds });
+          for (const generated of unit.generated) {
+            const regex = templateIdRegex(generated.id);
+            if (regex) {
+              templates.push({ file: entry.file, unit, idRegex: regex, templateIds: [] });
+            }
+          }
+          continue;
+        }
+        if (unit.id) {
+          add(unit.id, { file: entry.file, start: unit.idStart, end: unit.idEnd, unit, plugin: unit.plugin });
+        }
+        for (const generated of unit.generated) {
+          add(generated.id, { file: entry.file, start: generated.start, end: generated.end, unit, plugin: generated.plugin });
+        }
+      }
+    }
+    this.cache = { ids, templates, namespaces };
+    return this.cache;
+  }
+
+  definitions(id: string): Definition[] {
+    return this.build().ids.get(id) ?? [];
+  }
+
+  allIds(): IterableIterator<string> {
+    return this.build().ids.keys();
+  }
+
+  templates(): TemplateDef[] {
+    return this.build().templates;
+  }
+
+  hasNamespace(namespace: string): boolean {
+    return this.build().namespaces.has(namespace);
+  }
+}

@@ -1,0 +1,51 @@
+name: Test
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  # Catch drift from upstream plainbox parsers (see test/parity.test.ts)
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Lint and test (incl. parity with plainbox)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: vscode-checkbox
+          persist-credentials: false
+      - name: Checkout Checkbox
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: canonical/checkbox
+          path: checkbox
+          # setuptools_scm needs tags to version checkbox-ng
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+      - name: Install checkbox-ng
+        run: python3 -m pip install ./checkbox/checkbox-ng
+      - name: Install dependencies
+        working-directory: vscode-checkbox
+        run: npm ci
+      - name: Lint
+        working-directory: vscode-checkbox
+        run: npm run lint
+      - name: Test
+        working-directory: vscode-checkbox
+        env:
+          REQUIRE_PARITY: "1"
+          CHECKBOX_PYTHON: python3
+          CHECKBOX_REPO: ${{ github.workspace }}/checkbox
+        run: npm test
