@@ -3,6 +3,9 @@
 This is a vibe coded lsp and vscode extension specifically made to make working with checkbox unit files easier. 
 It provides autocomplete and "go to definition" functionalities like you would expect from regular language servers.
 
+> [!CAUTION]
+> Again, this is vibe coded for personal use. Install at your own risk.
+
 ## Installation
 
 1. Clone the repo
