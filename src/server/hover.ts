@@ -19,7 +19,7 @@ export function hoverMarkdown(index: WorkspaceIndex, ref: Reference): string | u
   const entries = new Map<string, string | undefined>();
   for (const def of definitions) {
     if (!entries.has(def.id)) {
-      entries.set(def.id, def.summary);
+      entries.set(def.id, def.summary ?? def.unit.name);
     }
   }
   for (const tpl of templates) {

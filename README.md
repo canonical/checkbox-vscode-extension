@@ -21,6 +21,13 @@ A VS Code extension with a language server for Checkbox unit files: PXU
   It lists the `namespace` or `name` argument in the `manage.py` of every
   provider with that namespace. For the built-in plainbox providers, it lists
   their definitions in `plainbox/impl/providers/special.py`.
+- **Completion** in test plan units: job and template ids in `include`, and
+  test plan ids in `nested_part`. Ids in the test plan's own namespace are
+  suggested as partial ids; type `namespace::` to get qualified ids. In
+  `include`, only the pattern is completed, not the `field=value` overrides.
+  In YAML files, VS Code does not show suggestions automatically inside
+  strings, which includes plain YAML values. Press Ctrl+Space, or set
+  `"[yaml]": {"editor.quickSuggestions": {"strings": "on"}}`.
 - **Hover** on a unit reference to show the id and `summary` of the unit it
   points to. For a regular expression, the hover lists up to 10 matching
   units.

@@ -7,6 +7,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import {
+  CompletionItem,
+  CompletionItemKind,
   createConnection,
   Hover,
   Diagnostic,
@@ -20,6 +22,7 @@ import {
   TextDocumentSyncKind,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
+import { completionCandidates, completionContext } from "./completion";
 import { hoverMarkdown } from "./hover";
 import { WorkspaceIndex } from "./index";
 import { unitFormat } from "./namespace";
@@ -122,6 +125,7 @@ connection.onInitialize((params) => {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
       hoverProvider: true,
+      completionProvider: {},
     },
   };
 });
@@ -230,6 +234,35 @@ connection.onHover(({ textDocument, position }): Hover | null => {
     contents: { kind: MarkupKind.Markdown, value: markdown },
     range: { start: doc.positionAt(ref.start), end: doc.positionAt(ref.end) },
   };
+});
+
+const COMPLETION_KIND = {
+  job: CompletionItemKind.Function,
+  template: CompletionItemKind.Class,
+  "test plan": CompletionItemKind.Module,
+};
+
+connection.onCompletion(({ textDocument, position }): CompletionItem[] => {
+  const doc = documents.get(textDocument.uri);
+  const file = toPath(textDocument.uri);
+  const entry = file ? index.files.get(file) : undefined;
+  if (!doc || !entry) {
+    return [];
+  }
+  const offset = doc.offsetAt(position);
+  // The line being typed may fall just outside the parsed unit
+  const unit = [...entry.units].reverse().find((u) => u.start <= offset);
+  const context = completionContext(doc.getText(), offset, unit);
+  if (!context) {
+    return [];
+  }
+  const range = { start: doc.positionAt(context.start), end: position };
+  return completionCandidates(index, context, entry.namespace).map((candidate) => ({
+    label: candidate.label,
+    kind: COMPLETION_KIND[candidate.kind],
+    detail: candidate.summary,
+    textEdit: { range, newText: candidate.label },
+  }));
 });
 
 connection.onDefinition(({ textDocument, position }) => {

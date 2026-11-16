@@ -2,17 +2,20 @@
 
 This repository is a VS Code extension (TypeScript) with a language server for
 [Checkbox](https://github.com/canonical/checkbox) unit files. The server
-provides go to definition, hover and diagnostics for unit references.
+provides go to definition, hover, completion and diagnostics for unit
+references.
 
 ## Layout
 
 - `src/client/extension.ts` starts the language client.
 - `src/server/server.ts` connects the LSP handlers: document sync, watched
-  files, diagnostics, definition and hover.
+  files, diagnostics, definition, hover and completion.
 - `src/server/namespace.ts` finds where each provider declares its namespace,
   which go to definition on `imports` namespaces uses.
 - `WorkspaceIndex.manifestEntries` finds `manifest entry` units by resource
   key, for go to definition on `manifest.<key>` in resource expressions.
+- `src/server/completion.ts` finds the test plan field at the cursor from the
+  text (the line being typed may not parse yet) and lists candidate ids.
 - `src/server/hover.ts` builds the hover text (id and summary of each target).
 - `src/server/parsers/{pxu,yaml}.ts` parse unit records and keep the document
   offset of every field.

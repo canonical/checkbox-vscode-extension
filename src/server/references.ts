@@ -78,6 +78,8 @@ export interface UnitInfo {
   idEnd: number;
   plugin?: string;
   summary?: string;
+  /** Test plans and categories have a name instead of a summary. */
+  name?: string;
   /** Qualified template id (templates only). */
   templateId?: string;
   generated: GeneratedId[];
@@ -272,6 +274,7 @@ class Extractor {
       kind: kind === "setup job" ? "setup_job" : kind,
       partialId: idLine?.text,
       summary: stringValue(unit.fields.get("summary")),
+      name: stringValue(unit.fields.get("name")),
       id: idLine ? qualify(idLine.text, namespace) : undefined,
       idStart: idLine?.offset ?? idField?.keyStart ?? unit.start,
       idEnd: idLine ? lineEnd(idLine) : (idField?.keyEnd ?? unit.start),

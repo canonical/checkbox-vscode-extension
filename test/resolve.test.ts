@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import { WorkspaceIndex } from "../src/server/index";
+import { completionCandidates, completionContext } from "../src/server/completion";
 import { hoverMarkdown } from "../src/server/hover";
 import { resolve } from "../src/server/resolve";
 import { fileDiagnostics } from "../src/server/workspace";
@@ -164,4 +165,38 @@ resource-key: custom
     return `${units.slice(ref.start, ref.end)} -> ${units.slice(target.start, target.end)}`;
   });
   assert.deepEqual(targets, ["has_x -> has_x", "custom -> other", "has_{name} -> has_x"]);
+});
+
+test("completion context in test plan include and nested_part", () => {
+  const context = (text: string, file = "/p/units/tp.pxu") => {
+    const offset = text.indexOf("|");
+    const source = text.replace("|", "");
+    const { entry } = makeIndex(source, file);
+    const unit = [...entry.units].reverse().find((u) => u.start <= offset);
+    const found = completionContext(source, offset, unit);
+    return found && `${found.field}:${found.prefix}`;
+  };
+  const plan = "unit: test plan\nid: tp\n";
+  assert.equal(context(`${plan}include: pl|`), "include:pl");
+  assert.equal(context(`${plan}include:\n  plain\n  ns::pl|\n`), "include:ns::pl");
+  assert.equal(context(`${plan}include:\n  plain certification_status=bl|`), undefined);
+  assert.equal(context(`${plan}nested_part: a b|`), "nested_part:b");
+  assert.equal(context(`${plan}exclude: pl|`), undefined);
+  assert.equal(context("id: j\ninclude: pl|"), undefined);
+  assert.equal(context(`${plan}include:\n  - pl|\n`, "/p/units/tp.yaml"), "include:pl");
+});
+
+test("completion candidates by field", () => {
+  const { index } = makeIndex("unit: test plan\nid: tp\n");
+  const labels = (field: "include" | "nested_part", prefix = "") =>
+    completionCandidates(index, { field, prefix, start: 0 }, "ns")
+      .map((c) => `${c.kind}:${c.label}`)
+      .sort();
+  assert.deepEqual(labels("nested_part"), ["test plan:tp"]);
+  const include = labels("include");
+  for (const expected of ["job:plain", "job:res", "job:sibling", "template:tpl/name", "template:after-suspend-tpl/name"]) {
+    assert.ok(include.includes(expected), expected);
+  }
+  assert.ok(!include.some((label) => label.endsWith(":cat") || label.endsWith(":tp")));
+  assert.ok(labels("include", "ns::").includes("job:ns::plain"));
 });
