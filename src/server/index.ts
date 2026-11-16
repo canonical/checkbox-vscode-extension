@@ -4,7 +4,7 @@
 
 import * as path from "path";
 import { ParseError } from "./model";
-import { namespaceFromManagePy, Provider, providerFor, unitFormat } from "./namespace";
+import { namespaceDeclaration, NamespaceDeclaration, Provider, providerFor, unitFormat } from "./namespace";
 import { parsePxu } from "./parsers/pxu";
 import { parseYaml } from "./parsers/yaml";
 import { extractUnit, UnitInfo } from "./references";
@@ -67,18 +67,26 @@ export class WorkspaceIndex {
   };
 
   setProvider(managePy: string, text: string): boolean {
-    const namespace = namespaceFromManagePy(managePy, text);
+    const declaration = namespaceDeclaration(managePy, text);
     const root = path.dirname(managePy);
-    if (!namespace) {
+    if (!declaration) {
       return this.removeProvider(managePy);
     }
+    const namespace = declaration.namespace;
     const previous = this.providers.get(root);
-    this.providers.set(root, { root, namespace });
+    this.providers.set(root, { root, namespace, declaration });
     if (previous?.namespace !== namespace) {
       this.reassignNamespaces();
       return true;
     }
     return false;
+  }
+
+  /** Where each provider using a namespace declares it. */
+  namespaceDeclarations(namespace: string): NamespaceDeclaration[] {
+    return [...this.providers.values()]
+      .filter((p) => p.namespace === namespace)
+      .map((p) => p.declaration);
   }
 
   removeProvider(managePy: string): boolean {

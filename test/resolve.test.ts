@@ -129,3 +129,17 @@ depends: plain job-with-sibling
   assert.equal(hover("job-with-sibling"), "`ns::job-with-sibling`\n\nParent");
   assert.equal(hover("plain"), "`ns::plain`\n\n*No summary*");
 });
+
+test("imports namespaces resolve to provider declarations", () => {
+  const p = 'setup(name="ns:p")';
+  const q = 'setup(name="other:q", namespace="ns")';
+  const { index, entry } = makeIndex("id: j\nplugin: shell\nimports: from ns import res as r\n");
+  const [ref] = entry.units[0].namespaceRefs;
+  assert.equal(ref.namespace, "ns");
+  assert.equal(entry.text.slice(ref.start, ref.end), "ns");
+  const declarations = index.namespaceDeclarations("ns").map((d) => {
+    const text = d.file === "/p/manage.py" ? p : q;
+    return `${d.file}:${text.slice(d.start - 6, d.end)}`;
+  });
+  assert.deepEqual(declarations.sort(), ['/p/manage.py:name="ns', '/q/manage.py:pace="ns']);
+});

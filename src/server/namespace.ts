@@ -4,6 +4,7 @@
  * part of the provider name before ":" when it is missing.
  */
 
+import * as fs from "fs";
 import * as path from "path";
 
 export const PLAINBOX_NAMESPACE = "com.canonical.plainbox";
@@ -22,28 +23,58 @@ export function unitFormat(file: string): "pxu" | "yaml" | undefined {
   return undefined;
 }
 
-function setupKwarg(text: string, name: string): string | undefined {
-  const setup = text.search(/\bsetup\s*\(/);
-  const body = setup === -1 ? text : text.slice(setup);
-  const m = new RegExp(`\\b${name}\\s*=\\s*(["'])([^"']+)\\1`).exec(body);
-  return m?.[2];
+/** A string value in a Python file and its document offset. */
+function stringArg(text: string, pattern: string, from = 0): { value: string; offset: number } | undefined {
+  const m = new RegExp(`${pattern}\\s*=\\s*(["'])([^"']+)\\1`).exec(text.slice(from));
+  return m ? { value: m[2], offset: from + m.index + m[0].length - m[2].length - 1 } : undefined;
 }
 
-export function namespaceFromManagePy(
+function setupKwarg(text: string, name: string) {
+  const setup = text.search(/\bsetup\s*\(/);
+  return stringArg(text, `\\b${name}`, Math.max(setup, 0));
+}
+
+/** Where a provider namespace is written. */
+export interface NamespaceDeclaration {
+  namespace: string;
+  file: string;
+  start: number;
+  end: number;
+}
+
+export function namespaceDeclaration(
   managePy: string,
   text: string,
-): string | undefined {
-  // Built-in plainbox providers define themselves in providers/special.py
-  const parts = path.dirname(managePy).split(path.sep);
+): NamespaceDeclaration | undefined {
+  const root = path.dirname(managePy);
+  const parts = root.split(path.sep);
   if (parts.slice(-4, -1).join("/") === "plainbox/impl/providers") {
-    return PLAINBOX_NAMESPACE;
+    // Built-in plainbox providers define themselves in providers/special.py
+    const special = path.join(path.dirname(root), "special.py");
+    let found: { value: string; offset: number } | undefined;
+    try {
+      const name = `${PLAINBOX_NAMESPACE}:${path.basename(root)}`;
+      const at = fs.readFileSync(special, "utf8").indexOf(`"${name}"`);
+      found = at === -1 ? undefined : { value: name, offset: at + 1 };
+    } catch {
+      found = undefined;
+    }
+    return found
+      ? { namespace: PLAINBOX_NAMESPACE, file: special, start: found.offset, end: found.offset + PLAINBOX_NAMESPACE.length }
+      : { namespace: PLAINBOX_NAMESPACE, file: managePy, start: 0, end: 0 };
   }
   const namespace = setupKwarg(text, "namespace");
   if (namespace) {
-    return namespace;
+    return { namespace: namespace.value, file: managePy, start: namespace.offset, end: namespace.offset + namespace.value.length };
   }
-  return setupKwarg(text, "name")?.split(":", 1)[0];
+  const name = setupKwarg(text, "name");
+  if (!name) {
+    return undefined;
+  }
+  const value = name.value.split(":", 1)[0];
+  return { namespace: value, file: managePy, start: name.offset, end: name.offset + value.length };
 }
+
 
 /** Mirrors Unit.qualify_id. */
 export function qualify(id: string, namespace: string): string {
@@ -59,6 +90,7 @@ export function namespaceOf(id: string): string | undefined {
 export interface Provider {
   root: string;
   namespace: string;
+  declaration: NamespaceDeclaration;
 }
 
 /**

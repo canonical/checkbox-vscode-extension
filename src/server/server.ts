@@ -43,8 +43,16 @@ function textDocumentFor(file: string): TextDocument | undefined {
   if (open) {
     return open;
   }
-  const entry = index.files.get(file);
-  return entry ? TextDocument.create(uri, "", 0, entry.text) : undefined;
+  const text = index.files.get(file)?.text ?? readFile(file);
+  return text === undefined ? undefined : TextDocument.create(uri, "", 0, text);
+}
+
+function readFile(file: string): string | undefined {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
 }
 
 async function reindex() {
@@ -186,32 +194,11 @@ function referenceAt(uri: string, position: Position) {
   const offset = doc.offsetAt(position);
   const unit = entry.units.find((u) => u.start <= offset && offset <= u.end);
   const ref = unit?.references.find((r) => r.start <= offset && offset <= r.end);
-  return ref ? { doc, ref } : undefined;
+  const namespace = unit?.namespaceRefs.find((n) => n.start <= offset && offset <= n.end);
+  return ref || namespace ? { doc, ref, namespace } : undefined;
 }
 
-connection.onHover(({ textDocument, position }): Hover | null => {
-  const found = referenceAt(textDocument.uri, position);
-  const markdown = found && hoverMarkdown(index, found.ref);
-  if (!found || !markdown) {
-    return null;
-  }
-  const { doc, ref } = found;
-  return {
-    contents: { kind: MarkupKind.Markdown, value: markdown },
-    range: { start: doc.positionAt(ref.start), end: doc.positionAt(ref.end) },
-  };
-});
-
-connection.onDefinition(({ textDocument, position }) => {
-  const ref = referenceAt(textDocument.uri, position)?.ref;
-  if (!ref) {
-    return null;
-  }
-  const { definitions, templates } = resolve(index, ref);
-  const targets = [
-    ...definitions.map((d) => ({ file: d.file, start: d.start, end: d.end })),
-    ...templates.map((t) => ({ file: t.file, start: t.unit.idStart, end: t.unit.idEnd })),
-  ];
+function toLocations(targets: { file: string; start: number; end: number }[]): Location[] {
   const seen = new Set<string>();
   const locations: Location[] = [];
   for (const target of targets) {
@@ -227,6 +214,36 @@ connection.onDefinition(({ textDocument, position }) => {
     });
   }
   return locations;
+}
+
+connection.onHover(({ textDocument, position }): Hover | null => {
+  const found = referenceAt(textDocument.uri, position);
+  const ref = found?.ref;
+  const markdown = ref && hoverMarkdown(index, ref);
+  if (!found || !ref || !markdown) {
+    return null;
+  }
+  const { doc } = found;
+  return {
+    contents: { kind: MarkupKind.Markdown, value: markdown },
+    range: { start: doc.positionAt(ref.start), end: doc.positionAt(ref.end) },
+  };
+});
+
+connection.onDefinition(({ textDocument, position }) => {
+  const found = referenceAt(textDocument.uri, position);
+  if (found?.namespace) {
+    return toLocations(index.namespaceDeclarations(found.namespace.namespace));
+  }
+  const ref = found?.ref;
+  if (!ref) {
+    return null;
+  }
+  const { definitions, templates } = resolve(index, ref);
+  return toLocations([
+    ...definitions.map((d) => ({ file: d.file, start: d.start, end: d.end })),
+    ...templates.map((t) => ({ file: t.file, start: t.unit.idStart, end: t.unit.idEnd })),
+  ]);
 });
 
 documents.listen(connection);

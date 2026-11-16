@@ -39,6 +39,13 @@ export interface Reference {
   constraint: Constraint;
 }
 
+/** A namespace written in an imports statement. */
+export interface NamespaceRef {
+  namespace: string;
+  start: number;
+  end: number;
+}
+
 export interface GeneratedId {
   id: string;
   plugin?: string;
@@ -68,6 +75,7 @@ export interface UnitInfo {
   templateId?: string;
   generated: GeneratedId[];
   references: Reference[];
+  namespaceRefs: NamespaceRef[];
   problems: Problem[];
   start: number;
   end: number;
@@ -256,6 +264,7 @@ class Extractor {
       idEnd: idLine ? lineEnd(idLine) : (idField?.keyEnd ?? unit.start),
       generated: [],
       references: [],
+      namespaceRefs: [],
       problems: [],
       start: unit.start,
       end: unit.end,
@@ -299,6 +308,11 @@ class Extractor {
         continue;
       }
       result.push(stmt);
+      this.info.namespaceRefs.push({
+        namespace: stmt.namespace,
+        start: stmt.namespaceOffset,
+        end: stmt.namespaceOffset + stmt.namespace.length,
+      });
       this.ref(
         name,
         { text: stmt.partialId, offset: stmt.idOffset },

@@ -151,6 +151,7 @@ export interface ImportStmt {
   alias: string;
   /** Position of the partial id within the document. */
   idOffset: number;
+  namespaceOffset: number;
 }
 
 /** Mirrors plainbox.impl.resource.parse_imports_stmt for a single line. */
@@ -184,6 +185,7 @@ export function parseImport(line: ValueLine): ImportStmt | string {
     partialId: parts[3].text,
     alias: parts.length === 6 ? parts[5].text : parts[3].text,
     idOffset: parts[3].offset,
+    namespaceOffset: parts[1].offset,
   };
 }
 

@@ -9,6 +9,8 @@ provides go to definition, hover and diagnostics for unit references.
 - `src/client/extension.ts` starts the language client.
 - `src/server/server.ts` connects the LSP handlers: document sync, watched
   files, diagnostics, definition and hover.
+- `src/server/namespace.ts` finds where each provider declares its namespace,
+  which go to definition on `imports` namespaces uses.
 - `src/server/hover.ts` builds the hover text (id and summary of each target).
 - `src/server/parsers/{pxu,yaml}.ts` parse unit records and keep the document
   offset of every field.

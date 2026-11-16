@@ -47,6 +47,7 @@ test("include lines, imports and patterns", () => {
     partialId: "res",
     alias: "r",
     idOffset: 18,
+    namespaceOffset: 5,
   });
   assert.equal(typeof parseImport({ text: "from com.x import a::b", offset: 0 }), "string");
   assert.equal(classifyPattern("foo/bar-baz"), "fixed");
