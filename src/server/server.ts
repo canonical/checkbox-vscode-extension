@@ -8,15 +8,19 @@ import * as path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import {
   createConnection,
+  Hover,
   Diagnostic,
   DiagnosticSeverity,
   FileChangeType,
   Location,
+  MarkupKind,
+  Position,
   ProposedFeatures,
   TextDocuments,
   TextDocumentSyncKind,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
+import { hoverMarkdown } from "./hover";
 import { WorkspaceIndex } from "./index";
 import { unitFormat } from "./namespace";
 import { resolve } from "./resolve";
@@ -109,6 +113,7 @@ connection.onInitialize((params) => {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
+      hoverProvider: true,
     },
   };
 });
@@ -170,16 +175,35 @@ connection.onDidChangeWatchedFiles(({ changes }) => {
   schedulePublish();
 });
 
-connection.onDefinition(({ textDocument, position }) => {
-  const doc = documents.get(textDocument.uri);
-  const file = toPath(textDocument.uri);
+/** The unit reference under the cursor, if any. */
+function referenceAt(uri: string, position: Position) {
+  const doc = documents.get(uri);
+  const file = toPath(uri);
   const entry = file ? index.files.get(file) : undefined;
   if (!doc || !entry) {
-    return null;
+    return undefined;
   }
   const offset = doc.offsetAt(position);
   const unit = entry.units.find((u) => u.start <= offset && offset <= u.end);
   const ref = unit?.references.find((r) => r.start <= offset && offset <= r.end);
+  return ref ? { doc, ref } : undefined;
+}
+
+connection.onHover(({ textDocument, position }): Hover | null => {
+  const found = referenceAt(textDocument.uri, position);
+  const markdown = found && hoverMarkdown(index, found.ref);
+  if (!found || !markdown) {
+    return null;
+  }
+  const { doc, ref } = found;
+  return {
+    contents: { kind: MarkupKind.Markdown, value: markdown },
+    range: { start: doc.positionAt(ref.start), end: doc.positionAt(ref.end) },
+  };
+});
+
+connection.onDefinition(({ textDocument, position }) => {
+  const ref = referenceAt(textDocument.uri, position)?.ref;
   if (!ref) {
     return null;
   }

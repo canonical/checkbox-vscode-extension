@@ -42,6 +42,7 @@ export interface Reference {
 export interface GeneratedId {
   id: string;
   plugin?: string;
+  summary?: string;
   start: number;
   end: number;
 }
@@ -62,6 +63,7 @@ export interface UnitInfo {
   idStart: number;
   idEnd: number;
   plugin?: string;
+  summary?: string;
   /** Qualified template id (templates only). */
   templateId?: string;
   generated: GeneratedId[];
@@ -248,6 +250,7 @@ class Extractor {
     this.info = {
       kind: kind === "setup job" ? "setup_job" : kind,
       partialId: idLine?.text,
+      summary: stringValue(unit.fields.get("summary")),
       id: idLine ? qualify(idLine.text, namespace) : undefined,
       idStart: idLine?.offset ?? idField?.keyStart ?? unit.start,
       idEnd: idLine ? lineEnd(idLine) : (idField?.keyEnd ?? unit.start),
@@ -411,6 +414,7 @@ class Extractor {
           this.info.generated.push({
             id: qualify(`${prefix}-${id}`, this.namespace),
             plugin: this.info.plugin,
+            summary: this.info.summary,
             start: at.offset,
             end: lineEnd(at),
           });
@@ -423,6 +427,7 @@ class Extractor {
       this.info.generated.push({
         id: qualify(sibling.id.text, this.namespace),
         plugin: sibling.plugin ?? this.info.plugin,
+        summary: sibling.summary ?? this.info.summary,
         start: sibling.id.offset,
         end: lineEnd(sibling.id),
       });
@@ -432,11 +437,12 @@ class Extractor {
   }
 
   /** Siblings are YAML objects or, in PXU, a JSON string. */
-  private siblings(): { id: ValueLine; plugin?: string; flags?: string[] }[] {
+  private siblings(): { id: ValueLine; plugin?: string; summary?: string; flags?: string[] }[] {
     const field = this.fields.get("siblings");
     if (!field) {
       return [];
     }
+    const str = (value: unknown) => (typeof value === "string" ? value : undefined);
     const toFlags = (value: unknown): string[] | undefined =>
       Array.isArray(value)
         ? value.map(String)
@@ -453,8 +459,12 @@ class Extractor {
         if (!id) {
           return [];
         }
-        const plugin = get("plugin")?.value;
-        return [{ id, plugin: typeof plugin === "string" ? plugin : undefined, flags: toFlags(get("flags")?.value) }];
+        return [{
+          id,
+          plugin: str(get("plugin")?.value),
+          summary: str(get("_summary")?.value) ?? str(get("summary")?.value),
+          flags: toFlags(get("flags")?.value),
+        }];
       });
     }
     if (field.value.kind !== "string") {
@@ -492,7 +502,8 @@ class Extractor {
       }
       return [{
         id: at,
-        plugin: typeof sibling.plugin === "string" ? sibling.plugin : undefined,
+        plugin: str(sibling.plugin),
+        summary: str(sibling._summary) ?? str(sibling.summary),
         flags: toFlags(sibling.flags),
       }];
     });

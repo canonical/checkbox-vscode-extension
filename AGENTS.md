@@ -1,14 +1,15 @@
 # vscode-checkbox — Agent Instructions
 
 This repository is a VS Code extension (TypeScript) with a language server for
-[Checkbox](https://github.com/canonical/checkbox) unit files. The server provides go to definition and diagnostics
-for unit references.
+[Checkbox](https://github.com/canonical/checkbox) unit files. The server
+provides go to definition, hover and diagnostics for unit references.
 
 ## Layout
 
 - `src/client/extension.ts` starts the language client.
 - `src/server/server.ts` connects the LSP handlers: document sync, watched
-  files, diagnostics and definition.
+  files, diagnostics, definition and hover.
+- `src/server/hover.ts` builds the hover text (id and summary of each target).
 - `src/server/parsers/{pxu,yaml}.ts` parse unit records and keep the document
   offset of every field.
 - `src/server/syntax.ts` holds tokenizers that mirror `plainbox.impl.xparsers`,

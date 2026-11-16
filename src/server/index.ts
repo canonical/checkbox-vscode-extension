@@ -19,12 +19,16 @@ export interface FileEntry {
 
 /** A place where a unit id is defined. */
 export interface Definition {
+  /** Qualified id being defined. */
+  id: string;
   file: string;
   start: number;
   end: number;
   unit: UnitInfo;
   /** Plugin of the defined job (differs from unit.plugin for siblings). */
   plugin?: string;
+  /** Summary of the defined job (differs from unit.summary for siblings). */
+  summary?: string;
 }
 
 export interface TemplateDef {
@@ -132,7 +136,8 @@ export class WorkspaceIndex {
     const ids = new Map<string, Definition[]>();
     const templates: TemplateDef[] = [];
     const namespaces = new Set([...this.providers.values()].map((p) => p.namespace));
-    const add = (id: string, definition: Definition) => {
+    const add = (id: string, fields: Omit<Definition, "id">) => {
+      const definition = { id, ...fields };
       const list = ids.get(id);
       if (list) {
         list.push(definition);
@@ -164,10 +169,10 @@ export class WorkspaceIndex {
           continue;
         }
         if (unit.id) {
-          add(unit.id, { file: entry.file, start: unit.idStart, end: unit.idEnd, unit, plugin: unit.plugin });
+          add(unit.id, { file: entry.file, start: unit.idStart, end: unit.idEnd, unit, plugin: unit.plugin, summary: unit.summary });
         }
         for (const generated of unit.generated) {
-          add(generated.id, { file: entry.file, start: generated.start, end: generated.end, unit, plugin: generated.plugin });
+          add(generated.id, { file: entry.file, start: generated.start, end: generated.end, unit, plugin: generated.plugin, summary: generated.summary });
         }
       }
     }

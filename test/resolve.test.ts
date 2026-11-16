@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import { WorkspaceIndex } from "../src/server/index";
+import { hoverMarkdown } from "../src/server/hover";
 import { resolve } from "../src/server/resolve";
 import { fileDiagnostics } from "../src/server/workspace";
 
@@ -9,6 +10,7 @@ unit: category
 id: cat
 
 id: res
+_summary: Collect *resources*
 plugin: resource
 
 id: plain
@@ -23,7 +25,8 @@ flags: also-after-suspend
 
 id: job-with-sibling
 plugin: shell
-siblings: [{"id": "sibling", "plugin": "resource"}]
+_summary: Parent
+siblings: [{"id": "sibling", "plugin": "resource", "_summary": "Sibling"}]
 `;
 
 function makeIndex(units: string, file = "/p/units/a.pxu") {
@@ -110,4 +113,19 @@ plugin: shell
 depends: {% if x %}nothing{% endif %}
 `);
   assert.deepEqual(messages, []);
+});
+
+test("hover shows the summary of referenced units", () => {
+  const { index, entry } = makeIndex(`
+id: hovered
+plugin: shell
+requires: res.x == "1" and sibling.y == "2"
+depends: plain job-with-sibling
+`);
+  const hover = (text: string) =>
+    hoverMarkdown(index, entry.units[0].references.find((r) => r.text === text)!);
+  assert.equal(hover("res"), "`ns::res`\n\nCollect \\*resources\\*");
+  assert.equal(hover("sibling"), "`ns::sibling`\n\nSibling");
+  assert.equal(hover("job-with-sibling"), "`ns::job-with-sibling`\n\nParent");
+  assert.equal(hover("plain"), "`ns::plain`\n\n*No summary*");
 });

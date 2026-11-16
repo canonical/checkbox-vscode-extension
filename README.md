@@ -9,6 +9,9 @@ A VS Code extension with a language server for Checkbox unit files: PXU
   `exclude`, `mandatory_include`, `bootstrap_include`, `setup_include`,
   `nested_part` and `category-overrides`. For a regular expression, go to
   definition lists every unit that the pattern matches.
+- **Hover** on a unit reference to show the id and `summary` of the unit it
+  points to. For a regular expression, the hover lists up to 10 matching
+  units.
 - **Reference diagnostics** while you type:
   - **Error**: a unit id that does not exist, a namespace that no provider in
     the workspace defines, or a reference to the wrong kind of unit. Examples
