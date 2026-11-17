@@ -21,6 +21,7 @@ from plainbox.impl.providers.embedded_providers import (
 from plainbox.impl.providers import special
 from plainbox.impl.resource import ResourceProgram, parse_imports_stmt
 from plainbox.impl.secure.plugins import now
+from plainbox.impl.secure.providers.v1 import Provider1
 from plainbox.impl.session.state import SessionState
 from plainbox.impl.unit import all_units, get_array_field_qualify
 from plainbox.impl.unit.job import JobDefinition
@@ -186,13 +187,20 @@ def dump_fields():
 
 
 def _load_provider(manage_py):
-    # Built-in plainbox providers only call setup() under __main__
-    builtin = os.path.basename(os.path.dirname(os.path.abspath(manage_py)))
-    special_dir = os.path.dirname(os.path.abspath(special.__file__))
-    if os.path.dirname(os.path.dirname(os.path.abspath(manage_py))) == (
-        special_dir
+    # Built-in plainbox providers only call setup() under __main__, so take
+    # their definition from special.py but load the units from manage_py's
+    # directory: checkbox-ng may be installed elsewhere (not editable).
+    provider_dir = os.path.dirname(os.path.abspath(manage_py))
+    parent = os.path.dirname(provider_dir)
+    get_def = getattr(
+        special, "get_{}_def".format(os.path.basename(provider_dir)), None
+    )
+    if get_def and parent.endswith(
+        os.path.join("plainbox", "impl", "providers")
     ):
-        return getattr(special, "get_{}".format(builtin))()
+        definition = get_def()
+        definition.location = provider_dir
+        return Provider1.from_definition(definition, secure=False)
     with open(manage_py, encoding="UTF-8") as stream:
         text = stream.read()
     plugin = ManagePyProvider1PlugIn(

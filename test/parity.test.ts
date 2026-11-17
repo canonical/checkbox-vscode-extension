@@ -56,7 +56,8 @@ function runOracle(): Oracle {
     cwd: ROOT,
     encoding: "utf8",
     maxBuffer: 512 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "ignore"],
+    // stderr is attached to the error if the oracle fails
+    stdio: ["ignore", "pipe", "pipe"],
   });
   return JSON.parse(output) as Oracle;
 }
