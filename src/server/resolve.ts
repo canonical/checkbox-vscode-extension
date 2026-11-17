@@ -129,6 +129,9 @@ export function leadingChars(pattern: string): (string | null)[] {
   return out;
 }
 
+const patternShapes = new Map<string, { sample: string; chars: (string | null)[] }>();
+const templatePrefixes = new WeakMap<RegExp, string>();
+
 /** Whether a pattern may match ids instantiated from a template. */
 function patternMatchesTemplate(regex: RegExp, pattern: string, template: TemplateDef): boolean {
   const id = template.unit.id;
@@ -138,12 +141,22 @@ function patternMatchesTemplate(regex: RegExp, pattern: string, template: Templa
   if (!template.idRegex) {
     return false;
   }
-  if (template.idRegex.test(samplePattern(pattern))) {
+  // Memoized: these only depend on the pattern or the template
+  let shape = patternShapes.get(pattern);
+  if (!shape) {
+    shape = { sample: samplePattern(pattern), chars: leadingChars(pattern) };
+    patternShapes.set(pattern, shape);
+  }
+  if (template.idRegex.test(shape.sample)) {
     return true;
   }
-  const source = template.idRegex.source.replace(/^\^/, "");
-  const templatePrefix = source.slice(0, source.indexOf(".+")).replace(/\\(.)/g, "$1");
-  const patternChars = leadingChars(pattern);
+  let templatePrefix = templatePrefixes.get(template.idRegex);
+  if (templatePrefix === undefined) {
+    const source = template.idRegex.source.replace(/^\^/, "");
+    templatePrefix = source.slice(0, source.indexOf(".+")).replace(/\\(.)/g, "$1");
+    templatePrefixes.set(template.idRegex, templatePrefix);
+  }
+  const patternChars = shape.chars;
   const length = Math.min(patternChars.length, templatePrefix.length);
   for (let i = 0; i < length; i++) {
     if (patternChars[i] !== null && patternChars[i] !== templatePrefix[i]) {

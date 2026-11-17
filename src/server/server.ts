@@ -259,7 +259,7 @@ connection.onCompletion(({ textDocument, position }): CompletionItem[] => {
     return [];
   }
   const range = { start: doc.positionAt(context.start), end: position };
-  return completionCandidates(index, context, entry.namespace).map((candidate) => ({
+  return completionCandidates(index, context, entry.namespace, unit).map((candidate) => ({
     label: candidate.label,
     kind: COMPLETION_KIND[candidate.kind],
     detail: candidate.summary,

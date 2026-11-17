@@ -183,7 +183,8 @@ test("completion context in test plan include and nested_part", () => {
   assert.equal(context(`${plan}include:\n  plain certification_status=bl|`), undefined);
   assert.equal(context(`${plan}nested_part: a b|`), "nested_part:b");
   assert.equal(context(`${plan}bootstrap_include:\n  res pl|`), "bootstrap_include:pl");
-  assert.equal(context(`${plan}exclude: pl|`), undefined);
+  assert.equal(context(`${plan}exclude: pl|`), "exclude:pl");
+  assert.equal(context(`${plan}mandatory_include: pl|`), undefined);
   assert.equal(context("id: j\ninclude: pl|"), undefined);
   assert.equal(context(`${plan}include:\n  - pl|\n`, "/p/units/tp.yaml"), "include:pl");
 });
@@ -239,4 +240,28 @@ depends: plain
   assert.deepEqual(found(other, OTHER, OTHER.indexOf("id: tpl/") + 4), ["a:tpl/name"]);
   assert.deepEqual(found(entry, units, units.indexOf("id: tp\n") + 4), ["a:tp"]);
   assert.equal(targetsAt(index, entry, units.indexOf("include:")), undefined);
+});
+
+test("exclude completion lists units included by the plan and its nested parts", () => {
+  const units = `
+unit: test plan
+id: tp
+include:
+  plain
+  tpl/name
+  job-with.*
+nested_part: tp2
+exclude: |
+
+unit: test plan
+id: tp2
+include: res
+nested_part: tp
+`;
+  const { index, entry } = makeIndex(units);
+  const plan = entry.units[0];
+  const labels = completionCandidates(index, { field: "exclude", prefix: "", start: 0 }, "ns", plan)
+    .map((c) => `${c.kind}:${c.label}`)
+    .sort();
+  assert.deepEqual(labels, ["job:job-with-sibling", "job:plain", "job:res", "template:tpl/name"]);
 });

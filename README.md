@@ -45,9 +45,13 @@ A VS Code extension with a language server for Checkbox unit files: PXU
   their definitions in `plainbox/impl/providers/special.py`.
 - **Completion** in test plan units: job and template ids in `include`,
   automated job ids (shell, resource or attachment) in `bootstrap_include`,
-  and test plan ids in `nested_part`. Ids in the test plan's own namespace are
-  suggested as partial ids; type `namespace::` to get qualified ids. In
-  `include`, only the pattern is completed, not the `field=value` overrides.
+  test plan ids in `nested_part`, and in `exclude` only the jobs and template
+  ids that the plan selects through `include`, directly or through its
+  `nested_part` plans (like plainbox, `exclude` does not apply to
+  `mandatory_include` or `bootstrap_include`). Ids in the test plan's own
+  namespace are suggested as partial ids; type `namespace::` to get qualified
+  ids. In `include` and `exclude`, only the pattern is completed, not the
+  `field=value` overrides.
   In YAML files, VS Code does not show suggestions automatically inside
   strings, which includes plain YAML values. Press Ctrl+Space, or set
   `"[yaml]": {"editor.quickSuggestions": {"strings": "on"}}`.

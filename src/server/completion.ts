@@ -1,16 +1,18 @@
 /**
- * Completion of unit ids in test plan "include", "bootstrap_include" and
- * "nested_part" fields.
+ * Completion of unit ids in test plan "include", "exclude",
+ * "bootstrap_include" and "nested_part" fields.
  */
 
 import { WorkspaceIndex } from "./index";
 import { namespaceOf } from "./namespace";
+import { toJsRegex } from "./syntax";
 import { Constraint, UnitInfo } from "./references";
-import { satisfies } from "./resolve";
+import { resolve, satisfies } from "./resolve";
 
 /** Completed fields and the units they may reference. */
 const FIELDS = {
   include: "include",
+  exclude: "include",
   bootstrap_include: "bootstrap",
   nested_part: "test plan",
 } satisfies Record<string, Constraint>;
@@ -76,7 +78,7 @@ export function completionContext(text: string, offset: number, unit: UnitInfo |
     return undefined;
   }
   let prefix: string;
-  if (field === "include") {
+  if (field === "include" || field === "exclude") {
     // Only the pattern, not the "field=value" overrides after it
     if (/\s/.test(value)) {
       return undefined;
@@ -89,10 +91,53 @@ export function completionContext(text: string, offset: number, unit: UnitInfo |
 }
 
 /** Ids that may appear in the field; ids in `namespace` are partial. */
+/**
+ * Jobs and template ids selected by the include fields of a test plan and,
+ * recursively, of its nested parts: the units its exclude field can affect
+ * (TestPlanUnit.get_qualifier).
+ */
+function includedUnits(index: WorkspaceIndex, plan: UnitInfo, seen = new Set<UnitInfo>()): Map<string, Candidate> {
+  const included = new Map<string, Candidate>();
+  if (seen.has(plan)) {
+    return included;
+  }
+  seen.add(plan);
+  for (const ref of plan.references) {
+    if (ref.field === "include") {
+      const { definitions, templates } = resolve(index, ref);
+      for (const def of definitions) {
+        included.set(def.id, { label: def.id, kind: "job", summary: def.summary });
+      }
+      // Only the template ids (or instance id) that the include line names
+      const regex = ref.pattern ? new RegExp(toJsRegex(ref.target)) : undefined;
+      for (const template of templates) {
+        const ids = regex ? template.templateIds.filter((id) => regex.test(id)) : [ref.target];
+        for (const id of ids) {
+          included.set(id, { label: id, kind: "template", summary: template.unit.summary });
+        }
+      }
+    } else if (ref.field === "nested_part") {
+      for (const def of resolve(index, ref).definitions) {
+        if (def.unit.kind === "test plan") {
+          for (const [id, candidate] of includedUnits(index, def.unit, seen)) {
+            included.set(id, candidate);
+          }
+        }
+      }
+    }
+  }
+  return included;
+}
+
+/**
+ * Ids that may appear in the field; ids in `namespace` are partial.
+ * `plan` is the test plan being edited.
+ */
 export function completionCandidates(
   index: WorkspaceIndex,
   context: CompletionContext,
   namespace: string | undefined,
+  plan?: UnitInfo,
 ): Candidate[] {
   const qualified = context.prefix.includes("::");
   const label = (id: string) =>
@@ -104,6 +149,12 @@ export function completionCandidates(
       candidates.set(text, { label: text, kind, summary });
     }
   };
+  if (context.field === "exclude") {
+    for (const [id, candidate] of plan ? includedUnits(index, plan) : []) {
+      add(id, candidate.kind, candidate.summary);
+    }
+    return [...candidates.values()];
+  }
   const constraint = FIELDS[context.field];
   for (const id of index.allIds()) {
     const def = index.definitions(id).find((d) => satisfies(constraint, d));

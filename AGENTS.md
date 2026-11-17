@@ -16,7 +16,10 @@ diagnostics for unit references.
   key, for go to definition on `manifest.<key>` in resource expressions.
 - `src/server/completion.ts` finds the test plan field at the cursor from the
   text (the line being typed may not parse yet) and lists candidate ids that
-  pass the field's constraint (`satisfies` in `resolve.ts`).
+  pass the field's constraint (`satisfies` in `resolve.ts`). For `exclude`,
+  `includedUnits` lists what the plan's `include` and, recursively, its
+  `nested_part` plans select, mirroring plainbox
+  `TestPlanUnit.get_qualifier`.
 - `src/server/usages.ts` implements find all references. It checks every
   reference with `refersTo` (`resolve.ts`), which must give the same answer
   as `resolve()` restricted to the targets; it only exists because resolving
