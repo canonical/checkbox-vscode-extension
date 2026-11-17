@@ -4,6 +4,7 @@ import { WorkspaceIndex } from "../src/server/index";
 import { completionCandidates, completionContext } from "../src/server/completion";
 import { hoverMarkdown } from "../src/server/hover";
 import { resolve } from "../src/server/resolve";
+import { findReferences, targetsAt } from "../src/server/usages";
 import { fileDiagnostics } from "../src/server/workspace";
 
 const OTHER = `
@@ -181,14 +182,15 @@ test("completion context in test plan include and nested_part", () => {
   assert.equal(context(`${plan}include:\n  plain\n  ns::pl|\n`), "include:ns::pl");
   assert.equal(context(`${plan}include:\n  plain certification_status=bl|`), undefined);
   assert.equal(context(`${plan}nested_part: a b|`), "nested_part:b");
+  assert.equal(context(`${plan}bootstrap_include:\n  res pl|`), "bootstrap_include:pl");
   assert.equal(context(`${plan}exclude: pl|`), undefined);
   assert.equal(context("id: j\ninclude: pl|"), undefined);
   assert.equal(context(`${plan}include:\n  - pl|\n`, "/p/units/tp.yaml"), "include:pl");
 });
 
 test("completion candidates by field", () => {
-  const { index } = makeIndex("unit: test plan\nid: tp\n");
-  const labels = (field: "include" | "nested_part", prefix = "") =>
+  const { index } = makeIndex("unit: test plan\nid: tp\n\nid: manual-job\nplugin: manual\n");
+  const labels = (field: "include" | "bootstrap_include" | "nested_part", prefix = "") =>
     completionCandidates(index, { field, prefix, start: 0 }, "ns")
       .map((c) => `${c.kind}:${c.label}`)
       .sort();
@@ -199,4 +201,42 @@ test("completion candidates by field", () => {
   }
   assert.ok(!include.some((label) => label.endsWith(":cat") || label.endsWith(":tp")));
   assert.ok(labels("include", "ns::").includes("job:ns::plain"));
+  const bootstrap = labels("bootstrap_include");
+  assert.ok(bootstrap.includes("job:res") && bootstrap.includes("job:plain"));
+  assert.ok(include.includes("job:manual-job") && !bootstrap.includes("job:manual-job"));
+  assert.ok(!bootstrap.some((label) => label.startsWith("template:") || label.endsWith(":tp")));
+});
+
+test("find all references from a definition or a reference", () => {
+  const units = `
+unit: test plan
+id: tp
+include:
+  plain
+  pl.*
+  tpl/name
+nested_part: tp
+
+id: j
+plugin: shell
+depends: plain
+`;
+  const { index, entry } = makeIndex(units);
+  const other = index.files.get("/q/units/other.pxu")!;
+  const found = (from: typeof entry, text: string, offset: number, declaration = false) => {
+    const targets = targetsAt(index, from, offset)!;
+    return findReferences(index, targets, declaration)
+      .map((s) => `${s.file === entry.file ? "a" : "other"}:${index.files.get(s.file)!.text.slice(s.start, s.end)}`)
+      .sort();
+  };
+  // On the id of the definition
+  const plainAt = OTHER.indexOf("id: plain") + 4;
+  assert.deepEqual(found(other, OTHER, plainAt), ["a:pl.*", "a:plain", "a:plain"]);
+  assert.deepEqual(found(other, OTHER, plainAt, true), ["a:pl.*", "a:plain", "a:plain", "other:plain"]);
+  // On a reference: same targets
+  assert.deepEqual(found(entry, units, units.indexOf("depends: plain") + 10), ["a:pl.*", "a:plain", "a:plain"]);
+  // Templates: by template-id and by matching pattern
+  assert.deepEqual(found(other, OTHER, OTHER.indexOf("id: tpl/") + 4), ["a:tpl/name"]);
+  assert.deepEqual(found(entry, units, units.indexOf("id: tp\n") + 4), ["a:tp"]);
+  assert.equal(targetsAt(index, entry, units.indexOf("include:")), undefined);
 });

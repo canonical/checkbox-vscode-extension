@@ -54,6 +54,11 @@ function violation(constraint: Constraint, def: Definition): string | undefined 
   }
 }
 
+/** Whether a definition can be referenced from a field with the constraint. */
+export function satisfies(constraint: Constraint, def: Definition): boolean {
+  return violation(constraint, def) === undefined;
+}
+
 /** Whether template instances can satisfy the constraint. */
 function templateAllowed(constraint: Constraint, template: TemplateDef): boolean {
   const plugin = template.unit.plugin;
@@ -210,4 +215,51 @@ function resolvePattern(index: WorkspaceIndex, ref: Reference): Resolution {
     };
   }
   return { definitions, templates };
+}
+
+/** Units that references are searched for (see refersTo). */
+export interface Targets {
+  definitions: Definition[];
+  templates: TemplateDef[];
+}
+
+const patternCache = new Map<string, RegExp | null>();
+
+function compilePattern(pattern: string): RegExp | null {
+  let regex = patternCache.get(pattern);
+  if (regex === undefined) {
+    try {
+      regex = new RegExp(toJsRegex(pattern));
+    } catch {
+      regex = null;
+    }
+    patternCache.set(pattern, regex);
+  }
+  return regex;
+}
+
+/**
+ * Whether resolve(index, ref) would return one of the targets. Equivalent
+ * to resolving the reference, but only tests the targets, which is much
+ * faster when checking every reference in the workspace.
+ */
+export function refersTo(ref: Reference, targets: Targets): boolean {
+  if (!ref.pattern) {
+    return (
+      targets.definitions.some((d) => d.id === ref.target) ||
+      targets.templates.some(
+        (t) =>
+          templateAllowed(ref.constraint, t) &&
+          ((ref.constraint === "include" && t.templateIds.includes(ref.target)) || t.idRegex?.test(ref.target)),
+      )
+    );
+  }
+  const regex = compilePattern(ref.target);
+  if (!regex) {
+    return false;
+  }
+  return (
+    targets.definitions.some((d) => JOB_KINDS.includes(d.unit.kind) && regex.test(d.id)) ||
+    targets.templates.some((t) => patternMatchesTemplate(regex, ref.target, t))
+  );
 }

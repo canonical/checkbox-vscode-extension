@@ -1,12 +1,21 @@
 /**
- * Completion of unit ids in test plan "include" and "nested_part" fields.
+ * Completion of unit ids in test plan "include", "bootstrap_include" and
+ * "nested_part" fields.
  */
 
 import { WorkspaceIndex } from "./index";
 import { namespaceOf } from "./namespace";
-import { UnitInfo } from "./references";
+import { Constraint, UnitInfo } from "./references";
+import { satisfies } from "./resolve";
 
-export type CompletionField = "include" | "nested_part";
+/** Completed fields and the units they may reference. */
+const FIELDS = {
+  include: "include",
+  bootstrap_include: "bootstrap",
+  nested_part: "test plan",
+} satisfies Record<string, Constraint>;
+
+export type CompletionField = keyof typeof FIELDS;
 
 export interface CompletionContext {
   field: CompletionField;
@@ -57,16 +66,17 @@ export function completionContext(text: string, offset: number, unit: UnitInfo |
     return undefined;
   }
   const found = fieldAt(text, offset);
-  if (found?.field !== "include" && found?.field !== "nested_part") {
+  if (!found || !(found.field in FIELDS)) {
     return undefined;
   }
+  const field = found.field as CompletionField;
   // Drop indentation and a YAML list marker
   const value = found.value.replace(/^\s*(-\s+)?/, "");
   if (/^[|>"']/.test(value)) {
     return undefined;
   }
   let prefix: string;
-  if (found.field === "include") {
+  if (field === "include") {
     // Only the pattern, not the "field=value" overrides after it
     if (/\s/.test(value)) {
       return undefined;
@@ -75,7 +85,7 @@ export function completionContext(text: string, offset: number, unit: UnitInfo |
   } else {
     prefix = /[^\s,]*$/.exec(value)?.[0] ?? "";
   }
-  return { field: found.field, prefix, start: offset - prefix.length };
+  return { field, prefix, start: offset - prefix.length };
 }
 
 /** Ids that may appear in the field; ids in `namespace` are partial. */
@@ -94,11 +104,11 @@ export function completionCandidates(
       candidates.set(text, { label: text, kind, summary });
     }
   };
-  const kinds = context.field === "include" ? ["job", "setup_job"] : ["test plan"];
+  const constraint = FIELDS[context.field];
   for (const id of index.allIds()) {
-    const def = index.definitions(id).find((d) => kinds.includes(d.unit.kind));
+    const def = index.definitions(id).find((d) => satisfies(constraint, d));
     if (def) {
-      add(id, context.field === "include" ? "job" : "test plan", def.summary ?? def.unit.name);
+      add(id, context.field === "nested_part" ? "test plan" : "job", def.summary ?? def.unit.name);
     }
   }
   if (context.field === "include") {

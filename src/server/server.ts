@@ -24,6 +24,7 @@ import {
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { completionCandidates, completionContext } from "./completion";
 import { hoverMarkdown } from "./hover";
+import { findReferences, targetsAt } from "./usages";
 import { WorkspaceIndex } from "./index";
 import { unitFormat } from "./namespace";
 import { resolve } from "./resolve";
@@ -125,6 +126,7 @@ connection.onInitialize((params) => {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
       hoverProvider: true,
+      referencesProvider: true,
       completionProvider: {},
     },
   };
@@ -263,6 +265,14 @@ connection.onCompletion(({ textDocument, position }): CompletionItem[] => {
     detail: candidate.summary,
     textEdit: { range, newText: candidate.label },
   }));
+});
+
+connection.onReferences(({ textDocument, position, context }) => {
+  const doc = documents.get(textDocument.uri);
+  const file = toPath(textDocument.uri);
+  const entry = file ? index.files.get(file) : undefined;
+  const targets = doc && entry ? targetsAt(index, entry, doc.offsetAt(position)) : undefined;
+  return targets ? toLocations(findReferences(index, targets, context.includeDeclaration)) : null;
 });
 
 connection.onDefinition(({ textDocument, position }) => {
