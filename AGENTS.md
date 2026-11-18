@@ -23,7 +23,9 @@ diagnostics for unit references.
 - `src/server/usages.ts` implements find all references. It checks every
   reference with `refersTo` (`resolve.ts`), which must give the same answer
   as `resolve()` restricted to the targets; it only exists because resolving
-  every regex pattern against every id is too slow.
+  every regex pattern against every id is too slow. Manifest entries are
+  handled separately (`manifestKeysAt`, `findManifestReferences`): they are
+  used through `manifest.<key>` by resource key, not by unit id.
 - `src/server/hover.ts` builds the hover text (id and summary of each target).
 - `src/server/parsers/{pxu,yaml}.ts` parse unit records and keep the document
   offset of every field.

@@ -60,6 +60,9 @@ A VS Code extension with a language server for Checkbox unit files: PXU
   in any provider: test plan includes (also through matching regular
   expressions), `nested_part`, `depends`, `requires` and so on. For a
   template, it lists references to its `template-id` and to its instances.
+  On a manifest entry `id` or on `manifest.<key>` in a `requires`, it lists
+  every `manifest.<key>` that uses the same resource key, including keys with
+  template placeholders such as `manifest.has_{name}`.
 - **Hover** on a unit reference to show the id and `summary` of the unit it
   points to. For a regular expression, the hover lists up to 10 matching
   units.

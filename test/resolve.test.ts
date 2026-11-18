@@ -4,7 +4,7 @@ import { WorkspaceIndex } from "../src/server/index";
 import { completionCandidates, completionContext } from "../src/server/completion";
 import { hoverMarkdown } from "../src/server/hover";
 import { resolve } from "../src/server/resolve";
-import { findReferences, targetsAt } from "../src/server/usages";
+import { findManifestReferences, findReferences, manifestKeysAt, targetsAt } from "../src/server/usages";
 import { fileDiagnostics } from "../src/server/workspace";
 
 const OTHER = `
@@ -166,6 +166,59 @@ resource-key: custom
     return `${units.slice(ref.start, ref.end)} -> ${units.slice(target.start, target.end)}`;
   });
   assert.deepEqual(targets, ["has_x -> has_x", "custom -> other", "has_{name} -> has_x"]);
+});
+
+test("find all references of manifest entries", () => {
+  const units = `
+id: a
+plugin: shell
+imports: from com.canonical.plainbox import manifest
+requires: manifest.has_x == 'True' and manifest.custom == 'True' and manifest.gone == 'True'
+
+unit: template
+template-resource: res
+id: t/{name}
+plugin: shell
+imports: from com.canonical.plainbox import manifest
+requires: manifest.has_{name} == 'True'
+
+id: b
+plugin: shell
+imports: from com.canonical.plainbox import manifest
+requires: manifest.has_x == 'True'
+
+unit: manifest entry
+id: has_x
+
+unit: manifest entry
+id: other
+resource-key: custom
+`;
+  const { index, entry } = makeIndex(units);
+  // Offset of the nth occurrence of text, labelled for readable assertions
+  const at = (text: string, nth = 0) => {
+    let offset = -1;
+    for (let i = 0; i <= nth; i++) {
+      offset = units.indexOf(text, offset + 1);
+    }
+    return { offset, label: `${offset}:${text}` };
+  };
+  const usages = (text: string, nth = 0, includeDeclaration = true) => {
+    const keys = manifestKeysAt(index, entry, at(text, nth).offset + 1);
+    return keys && findManifestReferences(index, keys, includeDeclaration).map((s) => `${s.start}:${units.slice(s.start, s.end)}`).sort();
+  };
+  const uses = [at("has_x").label, at("has_{name}").label, at("has_x", 1).label];
+  const declaration = at("has_x", 2).label;
+  // From a use, from the manifest entry id, and without the declaration
+  assert.deepEqual(usages("has_x"), [...uses, declaration].sort());
+  assert.deepEqual(usages("has_x", 2), [...uses, declaration].sort());
+  assert.deepEqual(usages("has_x", 0, false), uses.sort());
+  // resource-key differs from the id
+  assert.deepEqual(usages("custom"), [at("custom").label, at("other").label].sort());
+  // No manifest entry defines the key: other uses of the same key
+  assert.deepEqual(usages("gone"), [at("gone").label]);
+  // Not on a manifest key
+  assert.equal(usages("plugin"), undefined);
 });
 
 test("completion context in test plan include and nested_part", () => {

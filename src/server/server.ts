@@ -24,7 +24,7 @@ import {
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { completionCandidates, completionContext } from "./completion";
 import { hoverMarkdown } from "./hover";
-import { findReferences, targetsAt } from "./usages";
+import { findManifestReferences, findReferences, manifestKeysAt, targetsAt } from "./usages";
 import { WorkspaceIndex } from "./index";
 import { unitFormat } from "./namespace";
 import { resolve } from "./resolve";
@@ -271,7 +271,14 @@ connection.onReferences(({ textDocument, position, context }) => {
   const doc = documents.get(textDocument.uri);
   const file = toPath(textDocument.uri);
   const entry = file ? index.files.get(file) : undefined;
-  const targets = doc && entry ? targetsAt(index, entry, doc.offsetAt(position)) : undefined;
+  if (!doc || !entry) {
+    return null;
+  }
+  const keys = manifestKeysAt(index, entry, doc.offsetAt(position));
+  if (keys) {
+    return toLocations(findManifestReferences(index, keys, context.includeDeclaration));
+  }
+  const targets = targetsAt(index, entry, doc.offsetAt(position));
   return targets ? toLocations(findReferences(index, targets, context.includeDeclaration)) : null;
 });
 

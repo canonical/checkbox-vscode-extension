@@ -54,6 +54,15 @@ export function templateIdRegex(id: string): RegExp | undefined {
   return new RegExp(`^${parts.join(".+")}$`);
 }
 
+/** Whether a `manifest.<key>` (may have placeholders) names `resourceKey`. */
+export function manifestKeyMatches(key: string, resourceKey: string | undefined): boolean {
+  if (resourceKey === undefined) {
+    return false;
+  }
+  const regex = templateIdRegex(key);
+  return regex ? regex.test(resourceKey) : key === resourceKey;
+}
+
 export class WorkspaceIndex {
   private providers = new Map<string, Provider>();
   readonly files = new Map<string, FileEntry>();
@@ -84,13 +93,15 @@ export class WorkspaceIndex {
 
   /** Manifest entry units exposing the given manifest resource attribute. */
   manifestEntries(key: string): { file: string; start: number; end: number }[] {
-    const regex = templateIdRegex(key);
-    const matches = (resourceKey?: string) =>
-      resourceKey !== undefined && (regex ? regex.test(resourceKey) : resourceKey === key);
+    return this.manifestUnits(key).map(({ file, unit }) => ({ file, start: unit.idStart, end: unit.idEnd }));
+  }
+
+  /** Manifest entry units whose resource key matches `key` (may have placeholders). */
+  manifestUnits(key: string): { file: string; unit: UnitInfo }[] {
     return [...this.files.values()].flatMap((entry) =>
       entry.units
-        .filter((u) => u.kind === "manifest entry" && matches(u.resourceKey))
-        .map((u) => ({ file: entry.file, start: u.idStart, end: u.idEnd })),
+        .filter((u) => u.kind === "manifest entry" && manifestKeyMatches(key, u.resourceKey))
+        .map((unit) => ({ file: entry.file, unit })),
     );
   }
 

@@ -3,7 +3,7 @@
  * the unit at the cursor.
  */
 
-import { FileEntry, WorkspaceIndex } from "./index";
+import { FileEntry, manifestKeyMatches, WorkspaceIndex } from "./index";
 import { refersTo, resolve, Targets } from "./resolve";
 
 export interface Span {
@@ -47,6 +47,47 @@ export function findReferences(index: WorkspaceIndex, targets: Targets, includeD
     for (const unit of entry.units) {
       for (const ref of unit.references) {
         if (refersTo(ref, targets)) {
+          spans.push({ file: entry.file, start: ref.start, end: ref.end });
+        }
+      }
+    }
+  }
+  return spans;
+}
+
+/**
+ * Resource keys named at `offset`: a manifest entry's id, or a
+ * `manifest.<key>` in a resource expression (the keys of the entries it
+ * names, or the key itself if no entry defines it).
+ */
+export function manifestKeysAt(index: WorkspaceIndex, entry: FileEntry, offset: number): string[] | undefined {
+  const at = (r: { start: number; end: number }) => r.start <= offset && offset <= r.end;
+  const unit = entry.units.find(at);
+  if (!unit) {
+    return undefined;
+  }
+  if (unit.kind === "manifest entry" && unit.resourceKey && at({ start: unit.idStart, end: unit.idEnd })) {
+    return [unit.resourceKey];
+  }
+  const ref = unit.manifestRefs.find(at);
+  if (!ref) {
+    return undefined;
+  }
+  const keys = index.manifestUnits(ref.key).map(({ unit }) => unit.resourceKey!);
+  return keys.length > 0 ? keys : [ref.key];
+}
+
+/** Every `manifest.<key>` that names one of `keys`. */
+export function findManifestReferences(index: WorkspaceIndex, keys: string[], includeDeclaration: boolean): Span[] {
+  const named = (key: string) => keys.some((k) => key === k || manifestKeyMatches(key, k));
+  const spans: Span[] = [];
+  for (const entry of index.files.values()) {
+    for (const unit of entry.units) {
+      if (includeDeclaration && unit.kind === "manifest entry" && keys.includes(unit.resourceKey!)) {
+        spans.push({ file: entry.file, start: unit.idStart, end: unit.idEnd });
+      }
+      for (const ref of unit.manifestRefs) {
+        if (named(ref.key)) {
           spans.push({ file: entry.file, start: ref.start, end: ref.end });
         }
       }
