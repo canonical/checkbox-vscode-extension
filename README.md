@@ -75,6 +75,16 @@ A VS Code extension with a language server for Checkbox unit files: PXU
   - **Error**: a syntax error that hides references, such as a malformed
     `imports` line or include line, or an invalid regular expression.
   - **Warning**: an include pattern that matches no unit.
+- **Environment diagnostics** (warning): a variable that a job's `command`
+  expands (`$NAME` or `${NAME...}`) but that is not listed in `environ`.
+  This is a convention only: plainbox passes every variable of the config
+  `[environment]` section (launcher, `checkbox.conf`, `checkbox.configure`)
+  to every job, whether or not the job declares it. The scan skips
+  single-quoted strings, escaped `$`, comments and quoted heredocs. It also
+  skips variables that the command assigns (`NAME=`, `for`, `read`,
+  `local`, `export`, ...), shell and sudo variables (`HOME`, `SUDO_USER`,
+  ...), and variables that Checkbox sets (`PLAINBOX_SESSION_SHARE`, `SNAP*`,
+  ...).
 
 The extension indexes every provider in the workspace. A provider is a
 directory with a `manage.py`, and its units are the files under `units/` or

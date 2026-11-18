@@ -7,6 +7,7 @@
 
 import { Field, ListItem, RawUnit, stringValue, trimmedLine, ValueLine } from "./model";
 import { PLAINBOX_NAMESPACE, qualify } from "./namespace";
+import { undeclaredEnviron } from "./environ";
 import {
   classifyPattern,
   ImportStmt,
@@ -633,6 +634,9 @@ export function extractUnit(unit: RawUnit, namespace: string, keepTemplated = fa
  */
 export function extractUnits(unit: RawUnit, namespace: string, keepTemplated = false): UnitInfo[] {
   const info = extractUnit(unit, namespace, keepTemplated);
+  if (info.kind === "job" || isTemplate(info.kind) || info.kind === "setup_job") {
+    info.problems.push(...undeclaredEnviron(unit));
+  }
   return info.kind === "parametric template" ? [info, ...parametricInstances(unit, info, namespace)] : [info];
 }
 

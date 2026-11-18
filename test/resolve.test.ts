@@ -280,6 +280,50 @@ parameters: [{"n": 1, "m": 1}, {"n": 2}]
   assert.deepEqual(pxuMessages, ["parameters: parameter m is missing in parameters record 2"]);
 });
 
+test("environment variables used in command must be declared in environ", () => {
+  const { entry, messages } = makeIndex(`
+id: env
+plugin: shell
+environ: OTG, DECLARED
+command:
+ echo "$OTG $DECLARED \${MISSING:-x} it's $IN_DQ" $(cat "$IN_SUB")
+ awk '{ print $1, $SINGLE }' \\$ESCAPED $PLAINBOX_SESSION_SHARE $SNAP_NAME $1 $? \${#ARR[@]}
+ # $COMMENT
+ IFS= read -r line; for f in *; do echo "$line $f"; done; X=1; echo $X
+ cat <<'EOF'
+ $QUOTED_DOC
+ EOF
+ python3 <<EOF
+ print('$UNQUOTED_DOC')
+ EOF
+`);
+  assert.deepEqual(messages, [
+    "MISSING: Environment variable MISSING is not declared in environ",
+    "IN_DQ: Environment variable IN_DQ is not declared in environ",
+    "IN_SUB: Environment variable IN_SUB is not declared in environ",
+    "ARR: Environment variable ARR is not declared in environ",
+    "UNQUOTED_DOC: Environment variable UNQUOTED_DOC is not declared in environ",
+  ]);
+  assert.ok(entry.units[0].problems.every((p) => p.severity === "warning"));
+
+  const yaml = makeIndex(
+    `
+unit: parametric template
+template-id: p
+id: p_{num}
+plugin: shell
+environ: [A]
+command: |
+  echo "$A $B {num}"
+parameters:
+  - num: 1
+  - num: 2
+`,
+    "/p/units/a.yaml",
+  );
+  assert.deepEqual(yaml.messages, ["B: Environment variable B is not declared in environ"]);
+});
+
 test("completion context in test plan include and nested_part", () => {
   const context = (text: string, file = "/p/units/tp.pxu") => {
     const offset = text.indexOf("|");
