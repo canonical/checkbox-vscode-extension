@@ -10,6 +10,8 @@
  */
 
 import { Field, RawUnit, ValueLine } from "./model";
+import { parsePxu } from "./parsers/pxu";
+import { parseYaml } from "./parsers/yaml";
 import type { Problem } from "./references";
 
 /** Variables set by the shell, sudo, or plainbox (get_execution_environment). */
@@ -208,20 +210,140 @@ function isKnown(name: string): boolean {
   return KNOWN.has(name) || KNOWN_PREFIXES.some((prefix) => name.startsWith(prefix));
 }
 
-/** Problems for variables used in `command` but missing from `environ`. */
-export function undeclaredEnviron(unit: RawUnit): Problem[] {
+/** Uses in `command` of variables missing from `environ`. */
+export function undeclaredUses(unit: RawUnit): VariableUse[] {
   const command = unit.fields.get("command");
   if (command?.value.kind !== "string") {
     return [];
   }
   const { uses, assigned } = scanShell(command.value.lines);
   const environ = declared(unit.fields.get("environ"));
-  return uses
-    .filter((u) => !assigned.has(u.name) && !environ.has(u.name) && !isKnown(u.name))
-    .map((u) => ({
-      message: `Environment variable ${u.name} is not declared in environ`,
-      start: u.start,
-      end: u.end,
-      severity: "warning" as const,
-    }));
+  return uses.filter((u) => !assigned.has(u.name) && !environ.has(u.name) && !isKnown(u.name));
+}
+
+export function undeclaredMessage(name: string): string {
+  return `Environment variable ${name} is not declared in environ`;
+}
+
+/** Problems for variables used in `command` but missing from `environ`. */
+export function undeclaredEnviron(unit: RawUnit): Problem[] {
+  return undeclaredUses(unit).map((u) => ({
+    message: undeclaredMessage(u.name),
+    start: u.start,
+    end: u.end,
+    severity: "warning" as const,
+  }));
+}
+
+export interface TextEdit {
+  start: number;
+  end: number;
+  newText: string;
+}
+
+function lineStart(text: string, offset: number): number {
+  return text.lastIndexOf("\n", offset - 1) + 1;
+}
+
+function lineEndAt(text: string, offset: number): number {
+  const eol = text.indexOf("\n", offset);
+  return eol === -1 ? text.length : eol;
+}
+
+/**
+ * Edit that adds names to the unit's `environ`, keeping its style: appended
+ * to a PXU/string value (comma separated if it already uses commas), to a
+ * YAML flow or block list, or as a new field before `command`.
+ */
+export function declareEnvironEdit(
+  text: string,
+  unit: RawUnit,
+  names: string[],
+  format: "pxu" | "yaml",
+): TextEdit | undefined {
+  const environ = unit.fields.get("environ");
+  const command = unit.fields.get("command");
+  if (!environ) {
+    if (!command) {
+      return undefined;
+    }
+    const start = lineStart(text, command.keyStart);
+    const indent = text.slice(start, command.keyStart);
+    const newText =
+      format === "pxu"
+        ? `${indent}environ: ${names.join(" ")}\n`
+        : `${indent}environ:\n${names.map((name) => `${indent}  - ${name}\n`).join("")}`;
+    return { start, end: start, newText };
+  }
+  const colon = text.indexOf(":", environ.keyEnd);
+  if (environ.value.kind === "string") {
+    const last = [...environ.value.lines].reverse().find((line) => line.text.trim());
+    if (!last) {
+      return { start: colon + 1, end: colon + 1, newText: ` ${names.join(" ")}` };
+    }
+    const quote = text[last.offset - 1];
+    if (format === "yaml" && (quote === "'" || quote === '"')) {
+      return undefined;
+    }
+    const separator = environ.value.lines.some((line) => line.text.includes(",")) ? ", " : " ";
+    const at = last.offset + last.text.trimEnd().length;
+    return { start: at, end: at, newText: `${separator}${names.join(separator)}` };
+  }
+  if (environ.value.kind !== "list") {
+    return undefined;
+  }
+  const items = environ.value.items.flatMap((item) => (item.kind === "string" ? [item.line] : []));
+  if (items.length !== environ.value.items.length) {
+    return undefined;
+  }
+  const valueStart = colon + 1 + (text.slice(colon + 1).length - text.slice(colon + 1).trimStart().length);
+  if (text[valueStart] === "[") {
+    const last = items[items.length - 1];
+    const close = text.indexOf("]", last ? last.offset + last.text.length : valueStart);
+    if (close === -1) {
+      return undefined;
+    }
+    return { start: close, end: close, newText: `${last ? ", " : ""}${names.join(", ")}` };
+  }
+  const last = items[items.length - 1];
+  if (!last) {
+    return undefined;
+  }
+  const dash = text.lastIndexOf("-", last.offset);
+  const indent = text.slice(lineStart(text, dash), dash);
+  const at = lineEndAt(text, last.offset);
+  return { start: at, end: at, newText: names.map((name) => `\n${indent}- ${name}`).join("") };
+}
+
+export interface EnvironFix {
+  title: string;
+  edit: TextEdit;
+  /** Names declared by the fix. */
+  names: string[];
+}
+
+/** Quick fixes for the undeclared variables in [start, end] of a document. */
+export function environFixes(text: string, format: "pxu" | "yaml", start: number, end: number): EnvironFix[] {
+  const parsed = format === "pxu" ? parsePxu(text) : parseYaml(text);
+  const unit = parsed.units.find((u) => u.start <= start && start <= u.end);
+  if (!unit) {
+    return [];
+  }
+  const uses = undeclaredUses(unit);
+  const all = [...new Set(uses.map((u) => u.name))];
+  const here = [...new Set(uses.filter((u) => u.start <= end && start <= u.end).map((u) => u.name))];
+  const fixes: EnvironFix[] = [];
+  for (const name of here) {
+    const edit = declareEnvironEdit(text, unit, [name], format);
+    if (edit) {
+      fixes.push({ title: `Declare ${name} in environ`, edit, names: [name] });
+    }
+  }
+  if (here.length && all.length > 1) {
+    const edit = declareEnvironEdit(text, unit, all, format);
+    if (edit) {
+      fixes.push({ title: `Declare all undeclared variables in environ (${all.join(", ")})`, edit, names: all });
+    }
+  }
+  return fixes;
 }

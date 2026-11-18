@@ -7,6 +7,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import {
+  CodeAction,
+  CodeActionKind,
   CompletionItem,
   CompletionItemKind,
   createConnection,
@@ -23,6 +25,7 @@ import {
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { completionCandidates, completionContext } from "./completion";
+import { environFixes, undeclaredMessage } from "./environ";
 import { hoverMarkdown } from "./hover";
 import { findManifestReferences, findReferences, manifestKeysAt, targetsAt } from "./usages";
 import { WorkspaceIndex } from "./index";
@@ -128,6 +131,7 @@ connection.onInitialize((params) => {
       hoverProvider: true,
       referencesProvider: true,
       completionProvider: {},
+      codeActionProvider: { codeActionKinds: [CodeActionKind.QuickFix] },
     },
   };
 });
@@ -282,6 +286,34 @@ connection.onReferences(({ textDocument, position, context }) => {
   }
   const targets = targetsAt(index, entry, doc.offsetAt(position));
   return targets ? toLocations(findReferences(index, targets, context.includeDeclaration)) : null;
+});
+
+connection.onCodeAction(({ textDocument, range, context }): CodeAction[] => {
+  const doc = documents.get(textDocument.uri);
+  const file = toPath(textDocument.uri);
+  const format = file ? unitFormat(file) : undefined;
+  if (!doc || !format) {
+    return [];
+  }
+  const fixes = environFixes(doc.getText(), format, doc.offsetAt(range.start), doc.offsetAt(range.end));
+  return fixes.map((fix) => ({
+    title: fix.title,
+    kind: CodeActionKind.QuickFix,
+    isPreferred: fix.names.length === 1,
+    diagnostics: context.diagnostics.filter((d) =>
+      fix.names.some((name) => d.message === undeclaredMessage(name)),
+    ),
+    edit: {
+      changes: {
+        [textDocument.uri]: [
+          {
+            range: { start: doc.positionAt(fix.edit.start), end: doc.positionAt(fix.edit.end) },
+            newText: fix.edit.newText,
+          },
+        ],
+      },
+    },
+  }));
 });
 
 connection.onDefinition(({ textDocument, position }) => {

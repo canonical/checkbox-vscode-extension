@@ -6,6 +6,9 @@ import { hoverMarkdown } from "../src/server/hover";
 import { resolve } from "../src/server/resolve";
 import { findManifestReferences, findReferences, manifestKeysAt, targetsAt } from "../src/server/usages";
 import { fileDiagnostics } from "../src/server/workspace";
+import { environFixes, undeclaredEnviron } from "../src/server/environ";
+import { parsePxu } from "../src/server/parsers/pxu";
+import { parseYaml } from "../src/server/parsers/yaml";
 
 const OTHER = `
 unit: category
@@ -322,6 +325,41 @@ parameters:
     "/p/units/a.yaml",
   );
   assert.deepEqual(yaml.messages, ["B: Environment variable B is not declared in environ"]);
+});
+
+test("quick fix declares environment variables in environ", () => {
+  const apply = (text: string, format: "pxu" | "yaml", name: string, title = `Declare ${name} in environ`) => {
+    const at = text.indexOf(`$${name}`) + 1;
+    const fix = environFixes(text, format, at, at).find((f) => f.title === title);
+    assert.ok(fix, `no fix "${title}"`);
+    const result = text.slice(0, fix.edit.start) + fix.edit.newText + text.slice(fix.edit.end);
+    const unit = (format === "pxu" ? parsePxu(result) : parseYaml(result)).units[0];
+    assert.deepEqual(undeclaredEnviron(unit), [], result);
+    return result;
+  };
+  // No environ: new field before command, in the command's indentation
+  assert.equal(apply("id: a\ncommand: echo $X\n", "pxu", "X"), "id: a\nenviron: X\ncommand: echo $X\n");
+  assert.equal(
+    apply("id: a\ncommand: |\n  echo $X\n", "yaml", "X"),
+    "id: a\nenviron:\n  - X\ncommand: |\n  echo $X\n",
+  );
+  // Existing values keep their style
+  assert.equal(apply("id: a\nenviron: A B\ncommand: echo $X\n", "pxu", "X"), "id: a\nenviron: A B X\ncommand: echo $X\n");
+  assert.equal(apply("environ: A, B\ncommand: echo $X\n", "pxu", "X"), "environ: A, B, X\ncommand: echo $X\n");
+  assert.equal(apply("environ:\n A\n B\ncommand: echo $X\n", "pxu", "X"), "environ:\n A\n B X\ncommand: echo $X\n");
+  assert.equal(apply("environ: [A]\ncommand: echo $X\n", "yaml", "X"), "environ: [A, X]\ncommand: echo $X\n");
+  assert.equal(apply("environ: []\ncommand: echo $X\n", "yaml", "X"), "environ: [X]\ncommand: echo $X\n");
+  assert.equal(
+    apply("environ:\n  - A\ncommand: echo $X\n", "yaml", "X"),
+    "environ:\n  - A\n  - X\ncommand: echo $X\n",
+  );
+  // All at once
+  assert.equal(
+    apply("id: a\ncommand: echo $X $Y $X\n", "pxu", "Y", "Declare all undeclared variables in environ (X, Y)"),
+    "id: a\nenviron: X Y\ncommand: echo $X $Y $X\n",
+  );
+  // No fix away from a warning
+  assert.deepEqual(environFixes("id: a\ncommand: echo $X\n", "pxu", 0, 0), []);
 });
 
 test("completion context in test plan include and nested_part", () => {

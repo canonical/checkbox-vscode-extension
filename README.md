@@ -85,6 +85,11 @@ A VS Code extension with a language server for Checkbox unit files: PXU
   `local`, `export`, ...), shell and sudo variables (`HOME`, `SUDO_USER`,
   ...), and variables that Checkbox sets (`PLAINBOX_SESSION_SHARE`, `SNAP*`,
   ...).
+- **Quick fix** (Ctrl+.) on an environment warning: declare the variable in
+  `environ`, or declare every undeclared variable of the job at once. The
+  name is appended in the existing style (space or comma separated, YAML
+  flow or block list). Without `environ`, the field is added before
+  `command`.
 
 The extension indexes every provider in the workspace. A provider is a
 directory with a `manage.py`, and its units are the files under `units/` or
