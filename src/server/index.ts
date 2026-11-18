@@ -7,7 +7,7 @@ import { ParseError } from "./model";
 import { namespaceDeclaration, NamespaceDeclaration, Provider, providerFor, unitFormat } from "./namespace";
 import { parsePxu } from "./parsers/pxu";
 import { parseYaml } from "./parsers/yaml";
-import { extractUnit, UnitInfo } from "./references";
+import { extractUnits, UnitInfo } from "./references";
 
 export interface FileEntry {
   file: string;
@@ -147,7 +147,7 @@ export class WorkspaceIndex {
     if (namespace && format) {
       const parsed = format === "pxu" ? parsePxu(text) : parseYaml(text);
       entry.parseErrors = parsed.errors;
-      entry.units = parsed.units.map((unit) => extractUnit(unit, namespace, this.keepTemplated));
+      entry.units = parsed.units.flatMap((unit) => extractUnits(unit, namespace, this.keepTemplated));
     }
     this.files.set(file, entry);
     this.cache = undefined;
@@ -178,6 +178,11 @@ export class WorkspaceIndex {
     };
     for (const entry of this.files.values()) {
       for (const unit of entry.units) {
+        if (unit.kind === "parametric template") {
+          // Its jobs are known (separate units): only the template id is open-ended
+          templates.push({ file: entry.file, unit, templateIds: unit.templateId ? [unit.templateId] : [] });
+          continue;
+        }
         if (unit.kind === "template") {
           const suspendPrefixes = unit.generated
             .map((g) => g.id.slice(g.id.indexOf("::") + 2))

@@ -57,5 +57,8 @@ CHECKBOX_PYTHON=../checkbox/checkbox-ng/venv/bin/python REQUIRE_PARITY=1 npm tes
   parity test fails until you do.
 - Avoid false positives. When resolution is unsure, especially for
   templates, do not report.
+- `extractUnits` expands parametric templates into job instances, mirroring
+  `ParametricTemplateUnit.instantiate_jobs`. Instances share lines with the
+  template, so lookups by offset must consider every unit at that offset.
 - Do not add runtime dependencies without need. The tests use `node:test`.
 - Format `scripts/dump_units.py` with `black --line-length 79`.

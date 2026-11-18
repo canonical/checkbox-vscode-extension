@@ -94,5 +94,10 @@ export function fileDiagnostics(index: WorkspaceIndex, entry: FileEntry): Offset
       }
     }
   }
-  return result;
+  // Jobs of a parametric template share its lines
+  const seen = new Set<string>();
+  return result.filter((d) => {
+    const key = `${d.start}:${d.end}:${d.message}`;
+    return !seen.has(key) && seen.add(key);
+  });
 }

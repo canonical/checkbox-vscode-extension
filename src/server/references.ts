@@ -144,7 +144,7 @@ export const FIELD_CLASSES: Record<string, "reference" | "identity" | "other"> =
     ].map((f) => [f, "reference"]),
   ),
   ...Object.fromEntries(
-    ["id", "unit", "plugin", "flags", "siblings", "template-id"].map((f) => [f, "identity"]),
+    ["id", "unit", "plugin", "flags", "siblings", "template-id", "parameters"].map((f) => [f, "identity"]),
   ),
   ...Object.fromEntries(
     [
@@ -240,6 +240,11 @@ function flagWords(field: Field | undefined): ValueLine[] {
   return words;
 }
 
+/** Template units whose id has placeholders. */
+export function isTemplate(kind: string): boolean {
+  return kind === "template" || kind === "parametric template";
+}
+
 /** Mirrors TemplateUnit.slugify_template_id. */
 export function slugifyTemplateId(id: string): string {
   return id.replace(/[^-_.:/\\A-Za-z0-9]/g, "");
@@ -273,8 +278,9 @@ class Extractor {
     this.info = {
       kind: kind === "setup job" ? "setup_job" : kind,
       partialId: idLine?.text,
-      summary: stringValue(unit.fields.get("summary")),
-      name: stringValue(unit.fields.get("name")),
+      // YAML keeps the "_" translatable prefix; mirrors Unit.get_record_value
+      summary: stringValue(unit.fields.get("_summary") ?? unit.fields.get("summary")),
+      name: stringValue(unit.fields.get("_name") ?? unit.fields.get("name")),
       id: idLine ? qualify(idLine.text, namespace) : undefined,
       idStart: idLine?.offset ?? idField?.keyStart ?? unit.start,
       idEnd: idLine ? lineEnd(idLine) : (idField?.keyEnd ?? unit.start),
@@ -515,7 +521,7 @@ class Extractor {
     let parsed: unknown;
     try {
       let json = stringValue(field) ?? "";
-      if (this.info.kind === "template") {
+      if (isTemplate(this.info.kind)) {
         // Template fields are str.format templates: {{ and }} are escapes
         json = json.replace(/\{\{/g, "{").replace(/\}\}/g, "}");
       }
@@ -574,7 +580,7 @@ class Extractor {
 
   extract(): UnitInfo {
     const kind = this.info.kind;
-    if (kind === "template") {
+    if (isTemplate(kind)) {
       const raw = stringValue(this.fields.get("template-id")) || slugifyTemplateId(this.info.partialId ?? "");
       if (raw) {
         this.info.templateId = `${this.namespace}::${raw}`;
@@ -583,7 +589,7 @@ class Extractor {
       const resourceNamespace = this.templateResource(templateImports);
       this.resourceProgram("template-filter", resourceNamespace, templateImports);
     }
-    if (kind === "job" || kind === "template" || kind === "setup_job") {
+    if (kind === "job" || isTemplate(kind) || kind === "setup_job") {
       for (const [name, constraint] of JOB_LIST_FIELDS) {
         this.listField(name, constraint);
       }
@@ -606,7 +612,7 @@ class Extractor {
     if (kind === "job" || kind === "template") {
       this.generatedIds();
     }
-    if (kind === "template" && !this.keepTemplated) {
+    if (isTemplate(kind) && !this.keepTemplated) {
       this.dropTemplatedReferences();
     }
     return this.info;
@@ -619,4 +625,162 @@ class Extractor {
  */
 export function extractUnit(unit: RawUnit, namespace: string, keepTemplated = false): UnitInfo {
   return new Extractor(unit, namespace, keepTemplated).extract();
+}
+
+/**
+ * The unit and, for a parametric template, the jobs it instantiates (like
+ * ProviderContentPlugIn._prepare_unit).
+ */
+export function extractUnits(unit: RawUnit, namespace: string, keepTemplated = false): UnitInfo[] {
+  const info = extractUnit(unit, namespace, keepTemplated);
+  return info.kind === "parametric template" ? [info, ...parametricInstances(unit, info, namespace)] : [info];
+}
+
+/** Python str() of a parameter value. */
+function pyStr(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "boolean") {
+    return value ? "True" : "False";
+  }
+  if (value === null || value === undefined) {
+    return "None";
+  }
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
+class MissingParam extends Error {}
+
+/** Mirrors string.Formatter().vformat(text, (), parameters) for {name}. */
+function pyFormat(text: string, parameters: Record<string, unknown>): string {
+  return text.replace(/\{\{|\}\}|\{([^{}]*)\}/g, (match, field: string | undefined) => {
+    if (field === undefined) {
+      return match[0];
+    }
+    const name = field.split(/[.[!:]/)[0];
+    if (!(name in parameters)) {
+      throw new MissingParam(name);
+    }
+    return pyStr(parameters[name]);
+  });
+}
+
+/** Mirrors ParametricTemplateUnit.parameter_records. */
+function parameterRecords(field: Field | undefined): Record<string, unknown>[] | undefined {
+  let records: unknown;
+  if (field?.value.kind === "list") {
+    records = field.value.items.map((item) =>
+      item.kind === "map" ? Object.fromEntries(item.entries.map((e) => [e.key.text, e.value])) : undefined,
+    );
+  } else if (field?.value.kind === "string") {
+    try {
+      records = JSON.parse(stringValue(field) ?? "");
+    } catch {
+      return undefined;
+    }
+  }
+  const isRecord = (r: unknown) => typeof r === "object" && r !== null && !Array.isArray(r);
+  return Array.isArray(records) && records.every(isRecord) ? (records as Record<string, unknown>[]) : undefined;
+}
+
+/**
+ * Jobs of a parametric template (ParametricTemplateUnit.instantiate_jobs).
+ * Each field is rendered with the record; spans on rendered lines cover the
+ * whole template line, since rendering moves text around.
+ */
+function parametricInstances(unit: RawUnit, template: UnitInfo, namespace: string): UnitInfo[] {
+  const field = unit.fields.get("parameters");
+  const records = parameterRecords(field);
+  if (!records) {
+    const at = field ?? { keyStart: template.idStart, keyEnd: template.idEnd };
+    template.problems.push({
+      message: "parameters must be a list of mappings",
+      start: at.keyStart,
+      end: at.keyEnd,
+      severity: "error",
+    });
+    return [];
+  }
+  const instances: UnitInfo[] = [];
+  records.forEach((record, index) => {
+    // Rendered lines: offset -> [rendered length, original length]
+    const changed = new Map<number, [number, number]>();
+    const render = (line: ValueLine): ValueLine => {
+      const text = pyFormat(line.text, record);
+      if (text !== line.text) {
+        changed.set(line.offset, [text.length, line.text.length]);
+      }
+      return { text, offset: line.offset };
+    };
+    const renderValue = (value: unknown): unknown =>
+      typeof value === "string"
+        ? pyFormat(value, record)
+        : Array.isArray(value)
+          ? value.map(renderValue)
+          : value && typeof value === "object"
+            ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, renderValue(v)]))
+            : value;
+    const renderField = (f: Field): Field => {
+      const value = f.value;
+      if (value.kind === "string") {
+        return { ...f, value: { kind: "string", lines: value.lines.map(render) } };
+      }
+      if (value.kind === "list") {
+        const items = value.items.map((item): ListItem =>
+          item.kind === "string"
+            ? { kind: "string", line: render(item.line) }
+            : item.kind === "map"
+              ? {
+                  kind: "map",
+                  entries: item.entries.map((e) => ({
+                    key: e.key,
+                    value: renderValue(e.value),
+                    valueLine: e.valueLine && render(e.valueLine),
+                  })),
+                }
+              : item,
+        );
+        return { ...f, value: { kind: "list", items } };
+      }
+      return f;
+    };
+    const fields = new Map<string, Field>();
+    try {
+      for (const [key, f] of unit.fields) {
+        // The instance is a plain job: no parameters, no template- fields
+        if (key !== "parameters" && key !== "unit" && (!key.startsWith("template-") || key === "template-id")) {
+          fields.set(key, renderField(f));
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof MissingParam)) {
+        throw error;
+      }
+      template.problems.push({
+        message: `parameter ${error.message} is missing in parameters record ${index + 1}`,
+        start: field!.keyStart,
+        end: field!.keyEnd,
+        severity: "error",
+      });
+      return;
+    }
+    const info = extractUnit({ fields, start: unit.start, end: unit.end }, namespace);
+    const remap = (span: { start: number; end: number }) => {
+      for (const [offset, [rendered, original]] of changed) {
+        if (offset <= span.start && span.start <= offset + rendered) {
+          span.start = offset;
+          span.end = offset + original;
+          return;
+        }
+      }
+    };
+    const id = { start: info.idStart, end: info.idEnd };
+    remap(id);
+    info.idStart = id.start;
+    info.idEnd = id.end;
+    [...info.references, ...info.generated, ...info.namespaceRefs, ...info.manifestRefs, ...info.problems].forEach(remap);
+    instances.push(info);
+  });
+  return instances;
 }

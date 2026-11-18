@@ -198,12 +198,13 @@ function referenceAt(uri: string, position: Position) {
     return undefined;
   }
   const offset = doc.offsetAt(position);
-  const unit = entry.units.find((u) => u.start <= offset && offset <= u.end);
   const at = (r: { start: number; end: number }) => r.start <= offset && offset <= r.end;
-  const ref = unit?.references.find(at);
-  const namespace = unit?.namespaceRefs.find(at);
-  const manifest = unit?.manifestRefs.find(at);
-  return ref || namespace || manifest ? { doc, ref, namespace, manifest } : undefined;
+  // Several units when a parametric template's jobs share its text
+  const units = entry.units.filter(at);
+  const refs = units.flatMap((u) => u.references.filter(at));
+  const namespace = units.flatMap((u) => u.namespaceRefs.filter(at))[0];
+  const manifest = units.flatMap((u) => u.manifestRefs.filter(at))[0];
+  return refs.length > 0 || namespace || manifest ? { doc, refs, namespace, manifest } : undefined;
 }
 
 function toLocations(targets: { file: string; start: number; end: number }[]): Location[] {
@@ -226,8 +227,9 @@ function toLocations(targets: { file: string; start: number; end: number }[]): L
 
 connection.onHover(({ textDocument, position }): Hover | null => {
   const found = referenceAt(textDocument.uri, position);
-  const ref = found?.ref;
-  const markdown = ref && hoverMarkdown(index, ref);
+  const ref = found?.refs[0];
+  const blocks = new Set((found?.refs ?? []).map((r) => hoverMarkdown(index, r)).filter((m) => m !== undefined));
+  const markdown = [...blocks].join("\n\n---\n\n");
   if (!found || !ref || !markdown) {
     return null;
   }
@@ -290,15 +292,18 @@ connection.onDefinition(({ textDocument, position }) => {
   if (found?.manifest) {
     return toLocations(index.manifestEntries(found.manifest.key));
   }
-  const ref = found?.ref;
-  if (!ref) {
+  if (!found?.refs.length) {
     return null;
   }
-  const { definitions, templates } = resolve(index, ref);
-  return toLocations([
-    ...definitions.map((d) => ({ file: d.file, start: d.start, end: d.end })),
-    ...templates.map((t) => ({ file: t.file, start: t.unit.idStart, end: t.unit.idEnd })),
-  ]);
+  return toLocations(
+    found.refs.flatMap((ref) => {
+      const { definitions, templates } = resolve(index, ref);
+      return [
+        ...definitions.map((d) => ({ file: d.file, start: d.start, end: d.end })),
+        ...templates.map((t) => ({ file: t.file, start: t.unit.idStart, end: t.unit.idEnd })),
+      ];
+    }),
+  );
 });
 
 documents.listen(connection);

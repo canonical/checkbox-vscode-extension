@@ -4,6 +4,7 @@
  */
 
 import { FileEntry, manifestKeyMatches, WorkspaceIndex } from "./index";
+import { isTemplate } from "./references";
 import { refersTo, resolve, Targets } from "./resolve";
 
 export interface Span {
@@ -15,23 +16,32 @@ export interface Span {
 /**
  * Units named at `offset`: the unit whose id (or generated sibling id) is
  * under the cursor, or the units a reference under the cursor resolves to.
+ * A parametric template and its jobs share their text, so all units at
+ * `offset` contribute.
  */
 export function targetsAt(index: WorkspaceIndex, entry: FileEntry, offset: number): Targets | undefined {
   const at = (r: { start: number; end: number }) => r.start <= offset && offset <= r.end;
-  const unit = entry.units.find(at);
-  if (!unit) {
-    return undefined;
-  }
-  const ref = unit.references.find(at);
-  if (ref) {
+  const units = entry.units.filter(at);
+  const targets: Targets = { definitions: [], templates: [] };
+  const refs = units.flatMap((u) => u.references.filter(at));
+  for (const ref of refs) {
     const { definitions, templates } = resolve(index, ref);
-    return { definitions, templates };
+    targets.definitions.push(...definitions);
+    targets.templates.push(...templates);
   }
-  if (unit.kind === "template" && at({ start: unit.idStart, end: unit.idEnd })) {
-    return { definitions: [], templates: index.templates().filter((t) => t.unit === unit) };
+  if (refs.length === 0) {
+    for (const unit of units) {
+      if (isTemplate(unit.kind) && at({ start: unit.idStart, end: unit.idEnd })) {
+        targets.templates.push(...index.templates().filter((t) => t.unit === unit));
+        continue;
+      }
+      const id = at({ start: unit.idStart, end: unit.idEnd }) ? unit.id : unit.generated.find(at)?.id;
+      if (id) {
+        targets.definitions.push(...index.definitions(id));
+      }
+    }
   }
-  const id = at({ start: unit.idStart, end: unit.idEnd }) ? unit.id : unit.generated.find(at)?.id;
-  return id ? { definitions: index.definitions(id), templates: [] } : undefined;
+  return targets.definitions.length > 0 || targets.templates.length > 0 ? targets : undefined;
 }
 
 export function findReferences(index: WorkspaceIndex, targets: Targets, includeDeclaration: boolean): Span[] {
@@ -62,14 +72,12 @@ export function findReferences(index: WorkspaceIndex, targets: Targets, includeD
  */
 export function manifestKeysAt(index: WorkspaceIndex, entry: FileEntry, offset: number): string[] | undefined {
   const at = (r: { start: number; end: number }) => r.start <= offset && offset <= r.end;
-  const unit = entry.units.find(at);
-  if (!unit) {
-    return undefined;
+  const units = entry.units.filter(at);
+  const entryUnit = units.find((u) => u.kind === "manifest entry" && at({ start: u.idStart, end: u.idEnd }));
+  if (entryUnit?.resourceKey) {
+    return [entryUnit.resourceKey];
   }
-  if (unit.kind === "manifest entry" && unit.resourceKey && at({ start: unit.idStart, end: unit.idEnd })) {
-    return [unit.resourceKey];
-  }
-  const ref = unit.manifestRefs.find(at);
+  const ref = units.flatMap((u) => u.manifestRefs.filter(at))[0];
   if (!ref) {
     return undefined;
   }

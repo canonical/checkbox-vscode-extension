@@ -81,6 +81,13 @@ def _includes(unit, field):
     return result
 
 
+def _data(unit):
+    """Field values; jobs of parametric templates render them on access."""
+    if not getattr(unit, "is_parametric", False):
+        return unit._data
+    return {key: unit.get_record_value(key) for key in unit._data}
+
+
 def _generated_ids(unit):
     """Mirror SessionState._add_job_siblings_unit (siblings + flags)."""
     if unit.unit != "job":
@@ -91,7 +98,7 @@ def _generated_ids(unit):
     for overrides in siblings:
         data = {
             key: value
-            for key, value in unit._data.items()
+            for key, value in _data(unit).items()
             if not key.endswith("siblings")
         }
         data.update(overrides)
@@ -102,7 +109,7 @@ def _generated_ids(unit):
 
 
 def dump_unit(unit, root):
-    data = unit._data
+    data = _data(unit)
     entry = {
         "file": os.path.relpath(unit.origin.source.filename, root),
         "line": unit.origin.line_start,
@@ -113,7 +120,7 @@ def dump_unit(unit, root):
         "refs": {},
     }
     refs = entry["refs"]
-    if unit.unit == "template":
+    if unit.unit in ("template", "parametric template"):
         entry["template_id"] = unit.template_id
         if data.get("template-resource") is not None:
             refs["template-resource"] = _safe(lambda: [unit.resource_id])

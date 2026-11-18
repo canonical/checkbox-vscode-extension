@@ -91,6 +91,11 @@ An id that matches a template `id` (for example `foo_{name}`) counts as
 resolved, because template instances only exist at runtime. Template fields
 with `{placeholders}` or Jinja2 syntax are not checked.
 
+Parametric templates (`unit: parametric template`) are expanded statically,
+like plainbox does: each `parameters` record defines a job, and its rendered
+fields are checked. Diagnostics, go to definition and hover for an instance
+point at the matching line of the template.
+
 ## Build and run
 
 ```bash

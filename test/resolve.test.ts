@@ -221,6 +221,65 @@ resource-key: custom
   assert.equal(usages("plugin"), undefined);
 });
 
+test("parametric templates define one job per parameters record", () => {
+  const yaml = `
+unit: parametric template
+template-id: param
+id: param_{value}
+flags: [simple, also-after-suspend]
+_summary: Param {value}
+depends: ["{depends}"]
+before: [missing]
+parameters:
+  - value: A
+    depends: plain
+  - value: B
+    depends: param_A
+  - value: C
+    depends: gone
+---
+unit: test plan
+id: tp
+include:
+  - param_C
+  - after-suspend-param_B
+  - param
+  - param_D
+`;
+  const { index, entry, messages } = makeIndex(yaml, "/p/units/a.yaml");
+  assert.deepEqual(
+    entry.units.map((u) => `${u.kind} ${u.id}`),
+    ["parametric template ns::param_{value}", "job ns::param_A", "job ns::param_B", "job ns::param_C", "test plan ns::tp"],
+  );
+  // Instances point at the template's lines and render summaries
+  const [def] = index.definitions("ns::param_B");
+  assert.equal(yaml.slice(def.start, def.end), "param_{value}");
+  assert.equal(def.summary, "Param B");
+  assert.equal(index.definitions("ns::after-suspend-param_C").length, 1);
+  // Rendered references resolve; shared lines are reported once
+  assert.deepEqual(messages, [
+    "missing: unit ns::missing is not available",
+    "{depends}: unit ns::gone is not available",
+    "param_D: unit ns::param_D is not available",
+  ]);
+  // Go to definition / find references on the shared depends line
+  const offset = yaml.indexOf("{depends}") + 1;
+  const targets = targetsAt(index, entry, offset)!;
+  assert.deepEqual(targets.definitions.map((d) => d.id).sort(), ["ns::param_A", "ns::plain"]);
+
+  const pxu = `
+unit: parametric template
+template-id: px
+id: px_{n}
+plugin: shell
+depends: px_{m}
+parameters: [{"n": 1, "m": 1}, {"n": 2}]
+`;
+  const { messages: pxuMessages, entry: pxuEntry } = makeIndex(pxu);
+  assert.deepEqual(pxuEntry.units.map((u) => u.id), ["ns::px_{n}", "ns::px_1"]);
+  assert.deepEqual(pxuMessages, ["parameters: parameter m is missing in parameters record 2"]);
+});
+
 test("completion context in test plan include and nested_part", () => {
   const context = (text: string, file = "/p/units/tp.pxu") => {
     const offset = text.indexOf("|");

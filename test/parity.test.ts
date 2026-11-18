@@ -48,7 +48,7 @@ function managePyFiles(): string[] {
   return listFiles(ROOT)
     .filter(isManagePy)
     .map((file) => path.relative(ROOT, file))
-    .filter((file) => /^(providers|contrib|checkbox-ng\/plainbox\/impl\/providers)\//.test(file));
+    .filter((file) => /^(providers|contrib|checkbox-ng\/plainbox\/impl\/providers|metabox\/metabox\/metabox-provider)\//.test(file));
 }
 
 function runOracle(): Oracle {
