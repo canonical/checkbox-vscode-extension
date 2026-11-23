@@ -383,6 +383,37 @@ test("completion context in test plan include and nested_part", () => {
   assert.equal(context(`${plan}include:\n  - pl|\n`, "/p/units/tp.yaml"), "include:pl");
 });
 
+test("template-resource completion offers resource jobs and imports", () => {
+  const text = `
+unit: template
+template-imports: from ns import res as alias
+template-resource: |
+id: t/{x}
+plugin: shell
+
+unit: parametric template
+template-id: pt
+id: pt_{x}
+plugin: shell
+template-resource: |
+parameters: [{"x": 1}]
+`;
+  const source = text.replaceAll("|", "");
+  const { index, entry } = makeIndex(source);
+  const contextAt = (offset: number) => {
+    const unit = [...entry.units].reverse().find((u) => u.start <= offset);
+    return { unit, context: completionContext(source, offset, unit) };
+  };
+  const first = contextAt(text.indexOf("|"));
+  assert.deepEqual(first.context, { field: "template-resource", prefix: "", start: text.indexOf("|") });
+  const labels = completionCandidates(index, first.context!, "ns", first.unit).map((c) => `${c.kind}:${c.label}`);
+  assert.equal(labels[0], "import:alias");
+  assert.ok(labels.includes("job:res") && labels.includes("job:sibling"));
+  assert.ok(!labels.includes("job:plain"));
+  // Parametric templates cannot have a template-resource
+  assert.equal(contextAt(text.lastIndexOf("|") - 1).context, undefined);
+});
+
 test("completion candidates by field", () => {
   const { index } = makeIndex("unit: test plan\nid: tp\n\nid: manual-job\nplugin: manual\n");
   const labels = (field: "include" | "bootstrap_include" | "nested_part", prefix = "") =>

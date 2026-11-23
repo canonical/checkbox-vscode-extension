@@ -55,6 +55,9 @@ A VS Code extension with a language server for Checkbox unit files: PXU
   In YAML files, VS Code does not show suggestions automatically inside
   strings, which includes plain YAML values. Press Ctrl+Space, or set
   `"[yaml]": {"editor.quickSuggestions": {"strings": "on"}}`.
+- **Completion** in `template-resource` of `template` units: the aliases
+  from `template-imports`, then resource job ids (partial ids in the
+  template's namespace; type `namespace::` to get qualified ids).
 - **Find all references** (Shift+F12, or Shift+Alt+F12 for the side panel) on
   a unit `id` or on a reference. It lists every field that references the unit
   in any provider: test plan includes (also through matching regular

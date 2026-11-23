@@ -83,6 +83,8 @@ export interface UnitInfo {
   name?: string;
   /** Qualified template id (templates only). */
   templateId?: string;
+  /** Aliases from template-imports and the qualified ids they import. */
+  templateImports?: { alias: string; target: string }[];
   generated: GeneratedId[];
   references: Reference[];
   namespaceRefs: NamespaceRef[];
@@ -587,6 +589,10 @@ class Extractor {
         this.info.templateId = `${this.namespace}::${raw}`;
       }
       const templateImports = this.imports("template-imports");
+      this.info.templateImports = templateImports.map((stmt) => ({
+        alias: stmt.alias,
+        target: `${stmt.namespace}::${stmt.partialId}`,
+      }));
       const resourceNamespace = this.templateResource(templateImports);
       this.resourceProgram("template-filter", resourceNamespace, templateImports);
     }

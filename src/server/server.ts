@@ -248,6 +248,7 @@ const COMPLETION_KIND = {
   job: CompletionItemKind.Function,
   template: CompletionItemKind.Class,
   "test plan": CompletionItemKind.Module,
+  import: CompletionItemKind.Reference,
 };
 
 connection.onCompletion(({ textDocument, position }): CompletionItem[] => {

@@ -1,6 +1,7 @@
 /**
  * Completion of unit ids in test plan "include", "exclude",
- * "bootstrap_include" and "nested_part" fields.
+ * "bootstrap_include" and "nested_part" fields, and in template
+ * "template-resource".
  */
 
 import { WorkspaceIndex } from "./index";
@@ -15,6 +16,7 @@ const FIELDS = {
   exclude: "include",
   bootstrap_include: "bootstrap",
   nested_part: "test plan",
+  "template-resource": "resource",
 } satisfies Record<string, Constraint>;
 
 export type CompletionField = keyof typeof FIELDS;
@@ -28,7 +30,7 @@ export interface CompletionContext {
 
 export interface Candidate {
   label: string;
-  kind: "job" | "template" | "test plan";
+  kind: "job" | "template" | "test plan" | "import";
   summary?: string;
 }
 
@@ -64,21 +66,22 @@ function fieldAt(text: string, offset: number): { field: string; value: string }
 }
 
 export function completionContext(text: string, offset: number, unit: UnitInfo | undefined): CompletionContext | undefined {
-  if (unit?.kind !== "test plan") {
-    return undefined;
-  }
   const found = fieldAt(text, offset);
   if (!found || !(found.field in FIELDS)) {
     return undefined;
   }
   const field = found.field as CompletionField;
+  // Parametric templates must not have template-resource
+  if (unit?.kind !== (field === "template-resource" ? "template" : "test plan")) {
+    return undefined;
+  }
   // Drop indentation and a YAML list marker
   const value = found.value.replace(/^\s*(-\s+)?/, "");
   if (/^[|>"']/.test(value)) {
     return undefined;
   }
   let prefix: string;
-  if (field === "include" || field === "exclude") {
+  if (field === "include" || field === "exclude" || field === "template-resource") {
     // Only the pattern, not the "field=value" overrides after it
     if (/\s/.test(value)) {
       return undefined;
@@ -131,13 +134,13 @@ function includedUnits(index: WorkspaceIndex, plan: UnitInfo, seen = new Set<Uni
 
 /**
  * Ids that may appear in the field; ids in `namespace` are partial.
- * `plan` is the test plan being edited.
+ * `unit` is the test plan or template being edited.
  */
 export function completionCandidates(
   index: WorkspaceIndex,
   context: CompletionContext,
   namespace: string | undefined,
-  plan?: UnitInfo,
+  unit?: UnitInfo,
 ): Candidate[] {
   const qualified = context.prefix.includes("::");
   const label = (id: string) =>
@@ -150,10 +153,17 @@ export function completionCandidates(
     }
   };
   if (context.field === "exclude") {
-    for (const [id, candidate] of plan ? includedUnits(index, plan) : []) {
+    for (const [id, candidate] of unit ? includedUnits(index, unit) : []) {
       add(id, candidate.kind, candidate.summary);
     }
     return [...candidates.values()];
+  }
+  if (context.field === "template-resource" && !qualified) {
+    // Mirrors TemplateUnit.resource_id: an alias from template-imports wins
+    for (const { alias, target } of unit?.templateImports ?? []) {
+      const def = index.definitions(target).find((d) => satisfies("resource", d));
+      candidates.set(alias, { label: alias, kind: "import", summary: def?.summary ?? target });
+    }
   }
   const constraint = FIELDS[context.field];
   for (const id of index.allIds()) {
