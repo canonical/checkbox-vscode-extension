@@ -8,6 +8,7 @@
 import { Field, ListItem, RawUnit, stringValue, trimmedLine, ValueLine } from "./model";
 import { PLAINBOX_NAMESPACE, qualify } from "./namespace";
 import { undeclaredEnviron } from "./environ";
+import { shellOutput, ShellOutput } from "./shellOutput";
 import {
   classifyPattern,
   ImportStmt,
@@ -54,6 +55,20 @@ export interface NamespaceRef {
   end: number;
 }
 
+/**
+ * A resource attribute used by a unit: `alias.key` in requires or
+ * template-filter, or a placeholder in a template (a key of the
+ * template-resource records).
+ */
+export interface ResourceAttr {
+  field: string;
+  /** Qualified id of the resource job. */
+  target: string;
+  key: string;
+  start: number;
+  end: number;
+}
+
 export interface GeneratedId {
   id: string;
   plugin?: string;
@@ -91,13 +106,18 @@ export interface UnitInfo {
   manifestRefs: ManifestRef[];
   /** Attribute name in the manifest resource (manifest entries only). */
   resourceKey?: string;
+  resourceAttrs: ResourceAttr[];
+  /** Value of template-engine (templates only). */
+  templateEngine?: string;
+  /** What the command prints (resource jobs and templates only). */
+  output?: ShellOutput;
   problems: Problem[];
   start: number;
   end: number;
 }
 
 /** The resource job that exposes manifest entries by their resource key. */
-const MANIFEST_RESOURCE = `${PLAINBOX_NAMESPACE}::manifest`;
+export const MANIFEST_RESOURCE = `${PLAINBOX_NAMESPACE}::manifest`;
 
 const SUSPEND_FLAGS: [string, string][] = [
   ["also-after-suspend", "after-suspend"],
@@ -211,6 +231,24 @@ function arrayField(field: Field | undefined): ValueLine[] {
   return [];
 }
 
+/** Every string of a field value, including YAML mapping values. */
+function valueLines(field: Field): ValueLine[] {
+  const value = field.value;
+  if (value.kind === "string") {
+    return value.lines;
+  }
+  if (value.kind === "list") {
+    return value.items.flatMap((item) =>
+      item.kind === "string"
+        ? [item.line]
+        : item.kind === "map"
+          ? item.entries.flatMap((e) => (e.valueLine ? [e.valueLine] : []))
+          : [],
+    );
+  }
+  return [];
+}
+
 /** One entry per line (strings) or per item (lists), blank lines skipped. */
 function lineField(field: Field | undefined): ValueLine[] {
   if (!field) {
@@ -291,6 +329,7 @@ class Extractor {
       references: [],
       namespaceRefs: [],
       manifestRefs: [],
+      resourceAttrs: [],
       problems: [],
       start: unit.start,
       end: unit.end,
@@ -362,22 +401,22 @@ class Extractor {
           ? `${imported.namespace}::${imported.partialId}`
           : qualify(alias.text, namespace);
         this.ref(name, alias, target, "resource");
-        if (target === MANIFEST_RESOURCE && alias.attr) {
-          this.info.manifestRefs.push({
-            key: alias.attr.text,
-            start: alias.attr.offset,
-            end: lineEnd(alias.attr),
-          });
+        if (alias.attr?.text) {
+          const span = { start: alias.attr.offset, end: lineEnd(alias.attr) };
+          this.info.resourceAttrs.push({ field: name, target, key: alias.attr.text, ...span });
+          if (target === MANIFEST_RESOURCE) {
+            this.info.manifestRefs.push({ key: alias.attr.text, ...span });
+          }
         }
       }
     }
   }
 
-  /** Mirrors TemplateUnit.resource_id. */
-  private templateResource(imports: ImportStmt[]): string {
+  /** Mirrors TemplateUnit.resource_id; returns its namespace and id. */
+  private templateResource(imports: ImportStmt[]): { namespace: string; target?: string } {
     const line = trimmedLine(this.fields.get("template-resource"));
     if (!line) {
-      return this.namespace;
+      return { namespace: this.namespace };
     }
     const sep = line.text.indexOf("::");
     const partialId = sep === -1 ? line.text : line.text.slice(sep + 2);
@@ -387,7 +426,30 @@ class Extractor {
       ? `${imported.namespace}::${imported.partialId}`
       : `${namespace}::${partialId}`;
     this.ref("template-resource", line, target, "resource");
-    return namespace;
+    return { namespace, target };
+  }
+
+  /**
+   * Placeholders of template fields (template-* fields are not rendered):
+   * str.format "{name}" or Jinja2 "{{ name }}" (TemplateUnit.template_engine).
+   */
+  private placeholders(target: string) {
+    const jinja = this.info.templateEngine === "jinja2";
+    const regex = jinja ? /\{\{-?\s*([A-Za-z_]\w*)(?!\s*\()/g : /\{\{|\}\}|\{([A-Za-z_][\w-]*)(?=[}!:.[])/g;
+    for (const [key, field] of this.fields) {
+      if (key.startsWith("template-") || key === "unit") {
+        continue;
+      }
+      for (const line of valueLines(field)) {
+        for (const m of line.text.matchAll(regex)) {
+          // __index__, __checkbox_env__, ... are not resource keys
+          if (m[1] && !m[1].startsWith("__")) {
+            const start = line.offset + m.index + m[0].indexOf(m[1], 1);
+            this.info.resourceAttrs.push({ field: key, target, key: m[1], start, end: start + m[1].length });
+          }
+        }
+      }
+    }
   }
 
   /** Mirrors TestPlanUnit._get_matchers (IncludeStmtList). */
@@ -588,13 +650,17 @@ class Extractor {
       if (raw) {
         this.info.templateId = `${this.namespace}::${raw}`;
       }
+      this.info.templateEngine = stringValue(this.fields.get("template-engine"));
       const templateImports = this.imports("template-imports");
       this.info.templateImports = templateImports.map((stmt) => ({
         alias: stmt.alias,
         target: `${stmt.namespace}::${stmt.partialId}`,
       }));
-      const resourceNamespace = this.templateResource(templateImports);
-      this.resourceProgram("template-filter", resourceNamespace, templateImports);
+      const resource = this.templateResource(templateImports);
+      this.resourceProgram("template-filter", resource.namespace, templateImports);
+      if (resource.target && kind === "template") {
+        this.placeholders(resource.target);
+      }
     }
     if (kind === "job" || isTemplate(kind) || kind === "setup_job") {
       for (const [name, constraint] of JOB_LIST_FIELDS) {
@@ -618,6 +684,10 @@ class Extractor {
     }
     if (kind === "job" || kind === "template") {
       this.generatedIds();
+    }
+    const command = lineField(this.fields.get("command"));
+    if (this.info.plugin === "resource" && command.length > 0) {
+      this.info.output = shellOutput(command);
     }
     if (isTemplate(kind) && !this.keepTemplated) {
       this.dropTemplatedReferences();
@@ -789,7 +859,16 @@ function parametricInstances(unit: RawUnit, template: UnitInfo, namespace: strin
     remap(id);
     info.idStart = id.start;
     info.idEnd = id.end;
-    [...info.references, ...info.generated, ...info.namespaceRefs, ...info.manifestRefs, ...info.problems].forEach(remap);
+    [
+      ...info.references,
+      ...info.generated,
+      ...info.namespaceRefs,
+      ...info.manifestRefs,
+      ...info.resourceAttrs,
+      ...info.problems,
+      ...(info.output?.keys ?? []),
+      ...(info.output?.commands ?? []),
+    ].forEach(remap);
     instances.push(info);
   });
   return instances;

@@ -9,6 +9,7 @@ import { namespaceOf } from "./namespace";
 import { toJsRegex } from "./syntax";
 import { Constraint, UnitInfo } from "./references";
 import { resolve, satisfies } from "./resolve";
+import { resourceKeys } from "./resourceKeys";
 
 /** Completed fields and the units they may reference. */
 const FIELDS = {
@@ -180,4 +181,62 @@ export function completionCandidates(
     }
   }
   return [...candidates.values()];
+}
+
+export interface KeyCompletion {
+  /** Qualified id of the resource job. */
+  resource: string;
+  prefix: string;
+  start: number;
+  /** str.format field names may contain "-"; attributes may not. */
+  dashes: boolean;
+}
+
+/**
+ * A resource key being typed: `alias.` in requires or template-filter, or
+ * a placeholder in a template field ("{" or Jinja2 "{{ ").
+ */
+export function keyCompletionContext(text: string, offset: number, unit: UnitInfo | undefined): KeyCompletion | undefined {
+  const found = fieldAt(text, offset);
+  if (!found || !unit) {
+    return undefined;
+  }
+  if (found.field === "requires" || found.field === "template-filter") {
+    const match = /(?<![\w.])([A-Za-z_]\w*)\.(\w*)$/.exec(found.value);
+    if (!match) {
+      return undefined;
+    }
+    const aliasStart = offset - match[0].length;
+    const ref = unit.references.find((r) => r.start === aliasStart && r.constraint === "resource");
+    return ref && { resource: ref.target, prefix: match[2], start: offset - match[2].length, dashes: false };
+  }
+  if (unit.kind !== "template" || found.field.startsWith("template-") || found.field === "unit") {
+    return undefined;
+  }
+  const resource = unit.references.find((r) => r.field === "template-resource")?.target;
+  // "{{" is an escaped brace for str.format; "${" is a shell expansion
+  const jinja = unit.templateEngine === "jinja2";
+  const match =
+    jinja
+      ? /\{\{-?\s*(\w*)$/.exec(found.value)
+      : /(?<![{$])\{([\w-]*)$/.exec(found.value);
+  return resource && match
+    ? { resource, prefix: match[1], start: offset - match[1].length, dashes: !jinja }
+    : undefined;
+}
+
+export interface KeyCandidate {
+  label: string;
+  /** False for keys only seen in other units. */
+  printed: boolean;
+}
+
+export function keyCandidates(index: WorkspaceIndex, context: KeyCompletion): KeyCandidate[] {
+  const valid = context.dashes ? /^[A-Za-z_][\w-]*$/ : /^[A-Za-z_]\w*$/;
+  const { keys, complete } = resourceKeys(index, context.resource);
+  return [...keys]
+    .filter(([name]) => valid.test(name))
+    .map(([label, sources]) => ({ label, printed: sources.some((s) => s.kind !== "usage") }))
+    // Other units' usages are only hints when the output is partly known
+    .filter((candidate) => candidate.printed || !complete);
 }

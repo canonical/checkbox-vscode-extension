@@ -58,6 +58,26 @@ A VS Code extension with a language server for Checkbox unit files: PXU
 - **Completion** in `template-resource` of `template` units: the aliases
   from `template-imports`, then resource job ids (partial ids in the
   template's namespace; type `namespace::` to get qualified ids).
+- **Resource keys** (`res.key` in `requires` and `template-filter`, and
+  `{key}` or `{{ key }}` placeholders in templates):
+  - **Completion** after `res.` or `{`: the keys the resource job prints,
+    then keys other units use (only when the printed keys are partly known).
+  - **Hover**: the resource, where the key is printed and how often it is
+    used.
+  - **Go to definition**: the `echo` or `print` that writes the key, in the
+    job command or in a provider `bin/` script.
+  - **Warning**: a key the resource never prints, for example
+    `uname.relase`. It is only reported when every key the resource prints
+    is known.
+
+  Keys are found without running anything. The job command is read like
+  shell: `echo`, `printf` and `cat` heredocs, ignoring output that is
+  redirected or piped. Commands that are provider `bin/` scripts are
+  followed: shell scripts are read the same way, and Python scripts are read
+  with `scripts/resource_keys.py`, which inspects `print()` calls with
+  Python's `ast` module (see the `checkbox.pythonPath` setting). Anything
+  else, such as a system command or a key built at runtime, makes the key
+  list partly known. The `manifest` resource uses the manifest entry keys.
 - **Find all references** (Shift+F12, or Shift+Alt+F12 for the side panel) on
   a unit `id` or on a reference. It lists every field that references the unit
   in any provider: test plan includes (also through matching regular
@@ -135,6 +155,10 @@ checkout in VS Code.
   providers. Use it when the workspace does not contain a provider that
   another provider references. For example, units from the
   `com.canonical.plainbox` namespace live in a checkbox-ng checkout.
+- `checkbox.pythonPath` is the Python 3 interpreter that reads the keys
+  printed by Python resource scripts (default: `python3` on `PATH`). The
+  scripts are parsed, never run, and only the standard library is needed.
+  Without Python, keys printed by Python scripts are unknown.
 
 ## Tests
 

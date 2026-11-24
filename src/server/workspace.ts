@@ -7,7 +7,9 @@ import * as fs from "fs";
 import * as path from "path";
 import { FileEntry, WorkspaceIndex } from "./index";
 import { unitFormat } from "./namespace";
+import { MANIFEST_RESOURCE } from "./references";
 import { resolve } from "./resolve";
+import { resourceKeys } from "./resourceKeys";
 
 const SKIP_DIRS = new Set([
   ".git",
@@ -91,6 +93,21 @@ export function fileDiagnostics(index: WorkspaceIndex, entry: FileEntry): Offset
       const problem = resolve(index, ref).problem;
       if (problem) {
         result.push({ start: ref.start, end: ref.end, ...problem });
+      }
+    }
+    for (const attr of unit.resourceAttrs) {
+      const expression = attr.field === "requires" || attr.field === "template-filter";
+      if (!expression || attr.target === MANIFEST_RESOURCE || attr.key.includes("{")) {
+        continue;
+      }
+      const { keys, complete } = resourceKeys(index, attr.target);
+      if (complete && !keys.get(attr.key)?.some((s) => s.kind !== "usage")) {
+        result.push({
+          start: attr.start,
+          end: attr.end,
+          message: `Resource ${attr.target} never prints key '${attr.key}'`,
+          severity: "warning",
+        });
       }
     }
   }

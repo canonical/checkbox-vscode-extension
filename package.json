@@ -43,6 +43,11 @@
           },
           "default": [],
           "description": "Extra directories (absolute or workspace-relative) scanned for providers (manage.py), e.g. a checkbox-ng checkout providing the com.canonical.plainbox namespace."
+        },
+        "checkbox.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Python 3 interpreter used to read the keys printed by Python resource scripts (no script is run). Defaults to python3 on PATH."
         }
       }
     }

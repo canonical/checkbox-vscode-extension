@@ -18,9 +18,11 @@ export async function activate(context: ExtensionContext) {
     ],
     synchronize: {
       configurationSection: "checkbox",
-      fileEvents: workspace.createFileSystemWatcher(
-        "**/{manage.py,*.pxu,*.yaml,*.yml,*.txt,*.in}",
-      ),
+      fileEvents: [
+        workspace.createFileSystemWatcher("**/{manage.py,*.pxu,*.yaml,*.yml,*.txt,*.in}"),
+        // Scripts run by resource jobs
+        workspace.createFileSystemWatcher("**/bin/**"),
+      ],
     },
   };
   client = new LanguageClient("checkbox", "Checkbox Units", serverOptions, clientOptions);

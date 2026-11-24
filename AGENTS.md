@@ -36,6 +36,14 @@ diagnostics for unit references.
 - `src/server/index.ts` is the workspace index, and `resolve.ts` resolves
   references and applies constraints.
 - `scripts/dump_units.py` is the plainbox oracle used by the parity test.
+- `src/server/resourceKeys.ts` lists the keys a resource job prints
+  (`resourceKeys`). Sources are the job command (`shellOutput.ts`, a
+  lenient shell reader), provider `bin/` scripts it runs (shell scripts
+  are read recursively; Python scripts come from `WorkspaceIndex.scriptKeys`)
+  and `UnitInfo.resourceAttrs` (usage in other units).
+- `scripts/resource_keys.py` is the stdlib-only Python AST helper. The server
+  runs it on the Python scripts of resource jobs (`analyseScripts`) and again
+  when a `bin/` file changes. `--explain` shows why a script is incomplete.
 
 ## Commands
 
@@ -63,5 +71,9 @@ CHECKBOX_PYTHON=../checkbox/checkbox-ng/venv/bin/python REQUIRE_PARITY=1 npm tes
 - `environ.ts` is an extension-only lint with no plainbox counterpart. Keep
   its shell scan lenient: when unsure whether a name is assigned, do not
   report it.
+- A resource key set is `complete` only when every printed key is known:
+  every command is understood and every script analysed completely. Usage
+  never makes a set complete. The unknown-key warning and hiding usage-only
+  completions rely on it, so when unsure, mark the set incomplete.
 - Do not add runtime dependencies without need. The tests use `node:test`.
-- Format `scripts/dump_units.py` with `black --line-length 79`.
+- Format `scripts/*.py` with `black --line-length 79`.

@@ -8,6 +8,13 @@ import { namespaceDeclaration, NamespaceDeclaration, Provider, providerFor, unit
 import { parsePxu } from "./parsers/pxu";
 import { parseYaml } from "./parsers/yaml";
 import { extractUnits, UnitInfo } from "./references";
+import { PrintedKey } from "./shellOutput";
+
+/** Keys a provider script prints (from scripts/resource_keys.py). */
+export interface ScriptAnalysis {
+  keys: PrintedKey[];
+  complete: boolean;
+}
 
 export interface FileEntry {
   file: string;
@@ -66,8 +73,40 @@ export function manifestKeyMatches(key: string, resourceKey: string | undefined)
 export class WorkspaceIndex {
   private providers = new Map<string, Provider>();
   readonly files = new Map<string, FileEntry>();
+  /** Python script analyses by path; change through setScript. */
+  readonly scriptKeys = new Map<string, ScriptAnalysis>();
+  /** Bumped whenever units, providers or scripts change. */
+  version = 0;
   /** keepTemplated: see extractUnit. */
   constructor(private readonly keepTemplated = false) {}
+
+  private invalidate() {
+    this.cache = undefined;
+    this.version++;
+  }
+
+  setScript(file: string, analysis: ScriptAnalysis | undefined) {
+    if (analysis) {
+      this.scriptKeys.set(file, analysis);
+    } else {
+      this.scriptKeys.delete(file);
+    }
+    this.version++;
+  }
+
+  /**
+   * Directories searched for a provider executable run by a unit or script
+   * in `file`: its own provider's bin first, then every provider's (all are
+   * on PATH when Checkbox runs a job).
+   */
+  binDirs(file: string): string[] {
+    const roots = [...this.providers.keys()];
+    const own = roots
+      .filter((root) => file.startsWith(root + path.sep))
+      .sort((a, b) => b.length - a.length)[0];
+    const dirs = own ? [own, ...roots.filter((r) => r !== own)] : roots;
+    return dirs.map((root) => path.join(root, "bin"));
+  }
 
   private cache?: {
     ids: Map<string, Definition[]>;
@@ -88,6 +127,7 @@ export class WorkspaceIndex {
       this.reassignNamespaces();
       return true;
     }
+    this.invalidate();
     return false;
   }
 
@@ -128,7 +168,7 @@ export class WorkspaceIndex {
         this.updateFile(entry.file, entry.text);
       }
     }
-    this.cache = undefined;
+    this.invalidate();
   }
 
   namespaceFor(file: string): string | undefined {
@@ -150,13 +190,13 @@ export class WorkspaceIndex {
       entry.units = parsed.units.flatMap((unit) => extractUnits(unit, namespace, this.keepTemplated));
     }
     this.files.set(file, entry);
-    this.cache = undefined;
+    this.invalidate();
     return entry;
   }
 
   removeFile(file: string) {
     if (this.files.delete(file)) {
-      this.cache = undefined;
+      this.invalidate();
     }
   }
 

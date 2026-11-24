@@ -1,6 +1,7 @@
 src/**
 test/**
 scripts/**
+!scripts/resource_keys.py
 out/test/**
 **/*.map
 tsconfig.json

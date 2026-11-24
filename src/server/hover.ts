@@ -2,9 +2,11 @@
  * Hover text for unit references: the id and summary of each target.
  */
 
+import * as path from "path";
 import { WorkspaceIndex } from "./index";
-import { Reference } from "./references";
+import { Reference, ResourceAttr } from "./references";
 import { resolve } from "./resolve";
+import { resourceKeys } from "./resourceKeys";
 
 /** Regex include patterns can match many units; list at most this many. */
 const MAX_TARGETS = 10;
@@ -39,4 +41,34 @@ export function hoverMarkdown(index: WorkspaceIndex, ref: Reference): string | u
     blocks.push(`*…and ${entries.size - MAX_TARGETS} more*`);
   }
   return blocks.join("\n\n---\n\n");
+}
+
+/** Markdown describing where a resource key comes from. */
+export function resourceKeyMarkdown(index: WorkspaceIndex, attr: ResourceAttr): string {
+  const { keys, complete } = resourceKeys(index, attr.target);
+  const sources = keys.get(attr.key) ?? [];
+  const lines = [`\`${attr.key}\` — key of resource \`${attr.target}\``];
+  const printers = new Set<string>();
+  for (const source of sources) {
+    if (source.kind === "command") {
+      printers.add("its command");
+    } else if (source.kind === "script") {
+      printers.add(`\`${path.basename(source.file)}\``);
+    } else if (source.kind === "manifest") {
+      printers.add("a manifest entry");
+    }
+  }
+  const usages = sources.filter((s) => s.kind === "usage").length;
+  if (printers.size > 0) {
+    lines.push(`Printed by ${[...printers].join(", ")}`);
+  } else if (complete) {
+    lines.push("**Never printed by this resource**");
+  }
+  if (usages > 0) {
+    lines.push(`Used ${usages} time${usages === 1 ? "" : "s"} in the workspace`);
+  }
+  if (!complete) {
+    lines.push("*The keys this resource prints are only partly known*");
+  }
+  return lines.join("\n\n");
 }
