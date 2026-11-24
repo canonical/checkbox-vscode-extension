@@ -1,3 +1,4 @@
+# Sources and build files
 src/**
 test/**
 scripts/**
@@ -5,6 +6,10 @@ scripts/**
 out/test/**
 **/*.map
 tsconfig.json
+# Repository files
+.git*
 .github/**
 .vscode/**
+AGENTS.md
+renovate.json
 *.vsix

@@ -5,6 +5,10 @@
   "version": "0.1.0",
   "publisher": "canonical",
   "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/canonical/checkbox-vscode-extension.git"
+  },
   "private": true,
   "engines": {
     "vscode": "^1.91.0"
